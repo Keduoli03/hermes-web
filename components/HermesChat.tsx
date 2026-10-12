@@ -8,9 +8,7 @@ import { HermesSessionInfo, type HermesSessionDetail } from "./HermesSessionInfo
 import { HermesSettingsDialog, type HermesSettingsSection } from "./HermesSettingsDialog";
 import { HermesSidebar, HermesUiIcon, type HermesSessionRow } from "./HermesSidebar";
 import { ChatInput, type AttachedImage, type ChatInputHandle } from "./ChatInput";
-import { FileViewer } from "./FileViewer";
-import { TerminalPanel } from "./TerminalPanel";
-import { newTerminalTab, type TerminalTab } from "./terminal-tab-state";
+import { HermesRightPanel, type HermesRightPanelHandle } from "./HermesRightPanel";
 import { hermesJson } from "@/lib/hermes-client";
 import { PencilIcon } from "./SidebarIcons";
 import { ChatMinimap } from "./ChatMinimap";
@@ -68,8 +66,9 @@ function HermesWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [cwd, setCwd] = useState<string | null>(null);
-  const [filePath, setFilePath] = useState<string | null>(null);
-  const [terminal, setTerminal] = useState<TerminalTab | null>(null);
+  const [rightPanelExpanded,setRightPanelExpanded]=useState(false);
+  const [rightPanelOpen,setRightPanelOpen]=useState(false);
+  const rightPanelRef=useRef<HermesRightPanelHandle>(null);
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
   const [modelCatalog,setModelCatalog]=useState<{id:string;name:string;provider:string;input?:string[]}[]>([]);
   const [modelProvider,setModelProvider]=useState("");
@@ -250,7 +249,7 @@ function HermesWorkspace() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, [approval]);
 
-  const newChat = () => { if (streamRef.current || compactRef.current) return; if (managementDirty && !window.confirm(ht("放弃未保存的修改？"))) return; setManagementDirty(false); historyRef.current?.abort(); setPage(null); setSidebarOpen(false); history.replaceState(null,"",location.pathname);setSelected(null); setThinking("auto"); setMessages([]); setBusy(false); setLoading(false); setTools([]); setApproval(null); setError(""); };
+  const newChat = () => { if (streamRef.current || compactRef.current) return; if (managementDirty && !window.confirm(ht("放弃未保存的修改？"))) return; setManagementDirty(false); historyRef.current?.abort(); setPage(null); setSidebarOpen(false); history.replaceState(null,"",location.pathname);setSelected(null);setInfoOpen(false); setThinking("auto"); setMessages([]); setBusy(false); setLoading(false); setTools([]); setApproval(null); setError(""); };
 
   const renameSession = async (session: HermesSessionRow) => {
     const title = window.prompt(ht("会话标题"), session.title ?? "");
@@ -284,22 +283,22 @@ function HermesWorkspace() {
     const skills = await hermesJson<{ name: string; enabled?: boolean }[]>("/api/skills");
     return Object.fromEntries(skills.map((skill) => [skill.name, skill.enabled === false]));
   }, []);
-  const openFile = (path: string) => { setFilePath(path); setSidebarOpen(false); };
+  const openFile = (path: string) => { rightPanelRef.current?.openFile(path); setSidebarOpen(false); };
 
   return <main className={`hermes-layout ${sidebarOpen ? "sidebar-visible" : ""} ${!desktopSidebarOpen ? "sidebar-desktop-hidden" : ""}`}>
     {sidebarOpen && <button className="hermes-sidebar-backdrop" aria-label={ht("关闭侧栏")} onClick={() => setSidebarOpen(false)} />}
     <div className="hermes-sidebar-host" inert={page !== null}>
-      <HermesSidebar sessions={sessions} selected={selected} busy={busy || compacting || sessionActionBusy} loading={loading} onPin={session=>void updateSessionFlag(session,"pinned")} onArchive={session=>void updateSessionFlag(session,"archived")} hasMore={sessions.length < sessionTotal} onLoadMore={()=>void loadMoreSessions()} cwd={cwd} onCwdChange={setCwd} onNew={newChat} onSelect={(id) => void openSession(id)} onSettings={navigatePage} onOpenFile={openFile} onOpenTerminal={(dir) => { if (!terminal) setTerminal(newTerminalTab(dir)); setSidebarOpen(false); }} onMention={(path) => chatInputRef.current?.insertText(`@${path} `)} onRename={(session) => void renameSession(session)} onDelete={(session) => void deleteSession(session)} onClose={() => setSidebarOpen(false)} refreshKey={fileRefreshKey} />
+      <HermesSidebar sessions={sessions} selected={selected} busy={busy || compacting || sessionActionBusy} loading={loading} onPin={session=>void updateSessionFlag(session,"pinned")} onArchive={session=>void updateSessionFlag(session,"archived")} hasMore={sessions.length < sessionTotal} onLoadMore={()=>void loadMoreSessions()} cwd={cwd} onCwdChange={setCwd} onNew={newChat} onSelect={(id) => void openSession(id)} onSettings={navigatePage} onOpenFile={openFile} onOpenTerminal={(dir) => { rightPanelRef.current?.openTerminal(dir); setSidebarOpen(false); }} onMention={(path) => chatInputRef.current?.insertText(`@${path} `)} onRename={(session) => void renameSession(session)} onDelete={(session) => void deleteSession(session)} onClose={() => setSidebarOpen(false)} refreshKey={fileRefreshKey} />
     </div>
-    <section className="hermes-main" inert={page !== null}>
+    <section className="hermes-main" inert={page !== null || rightPanelExpanded}>
       <header className="hermes-top"><button className="hermes-toolbar-icon" aria-label={isMobile || !desktopSidebarOpen ? ht("打开侧栏") : ht("收起侧栏")} onClick={() => isMobile ? setSidebarOpen(true) : setDesktopSidebarOpen(!desktopSidebarOpen)}><HermesUiIcon name="sidebar" /></button>
         <button className="hermes-toolbar-action" disabled={!selected || busy || loading} onClick={() => void loadFullHistory()}><HermesUiIcon name="history" /><span>{ht("完整历史")}</span></button>
         <button className="hermes-toolbar-action" disabled={!selected || busy} onClick={() => { const session = sessions.find((s) => s.id === selected); if (session) void renameSession(session); }}><PencilIcon /><span>{ht("重命名")}</span></button>
         <button className="hermes-toolbar-action" onClick={() => navigatePage("config")}><HermesUiIcon name="settings" /><span>{ht("系统")}</span></button>
         <button className="hermes-toolbar-action" onClick={() => navigatePage("tools")}><HermesUiIcon name="tools" /><span>{ht("工具")}</span></button>
-        <span className="hermes-top-status" title={status}>{busy ? ht("运行中…") : compacting ? ht("正在压缩…") : ""}</span><button className="hermes-usage-button" aria-label={ht("会话信息与用量")} aria-expanded={infoOpen} onClick={()=>setInfoOpen(!infoOpen)}><span>↑ {detail?.input_tokens?.toLocaleString() ?? "—"}</span><span>↓ {detail?.output_tokens?.toLocaleString() ?? "—"}</span><span>{ht("缓存")} {detail?.cache_read_tokens?.toLocaleString() ?? "—"}</span><span>{(detail?.actual_cost_usd ?? detail?.estimated_cost_usd) == null ? "—" : `$${(detail?.actual_cost_usd ?? detail?.estimated_cost_usd)!.toFixed(4)}`}</span><HermesUiIcon name="sidebar"/></button>
+        <span className="hermes-top-status" title={status}>{busy ? ht("运行中…") : compacting ? ht("正在压缩…") : ""}</span>{selected && <button className="hermes-usage-button" aria-label={ht("会话信息与用量")} aria-expanded={infoOpen} onClick={()=>setInfoOpen(!infoOpen)}><span>↑ {detail?.input_tokens?.toLocaleString() ?? "—"}</span><span>↓ {detail?.output_tokens?.toLocaleString() ?? "—"}</span><span>{ht("缓存")} {detail?.cache_read_tokens?.toLocaleString() ?? "—"}</span><span>{(detail?.actual_cost_usd ?? detail?.estimated_cost_usd) == null ? "—" : `$${(detail?.actual_cost_usd ?? detail?.estimated_cost_usd)!.toFixed(4)}`}</span></button>}<button className="hermes-right-panel-toggle" aria-label={ht(rightPanelOpen ? "隐藏右侧面板" : "显示右侧面板")} aria-expanded={rightPanelOpen} aria-controls="hermes-right-panel" onClick={()=>setRightPanelOpen(!rightPanelOpen)}><HermesUiIcon name="right-sidebar"/></button>
       </header>
-      {infoOpen && <HermesSessionInfo detail={detail} sessionId={selected} cwd={cwd} error={infoError} onRefresh={()=>setInfoRevision(v=>v+1)}/>}
+      {selected && infoOpen && <HermesSessionInfo detail={detail} sessionId={selected} cwd={cwd} error={infoError} onRefresh={()=>setInfoRevision(v=>v+1)}/>}
       <div className={`hermes-chat ${!messages.length ? "is-empty" : ""}`} dir={display.direction} style={{"--hermes-user-transparency":`${display.bubbleTransparency}%`} as CSSProperties}>
         <div className="hermes-messages" ref={scrollRef}>
           {loading ? <div className="hermes-muted">{ht("正在读取 Hermes 会话…")}</div> : <div className="hermes-message-list">{messages.map((m, i) => <div ref={element=>{messageRefs.current[i]=element;}} key={`${i}-${m.role}`} className={m.role === "user" ? "hermes-user-row" : "hermes-assistant-row"}>{display.showReasoning && m.reasoning && <details className="hermes-reasoning" open={!display.collapseReasoning}><summary>{ht("推理过程")}</summary><MarkdownBody>{m.reasoning}</MarkdownBody></details>}<MessageView message={m.role === "user" ? { role: "user", content: m.images?.length ? [{ type: "text", text: m.text }, ...m.images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.mimeType, data: image.data } }))] : m.text } : m.role === "tool" ? { role: "custom", customType: "hermes-tool", display: true, content: m.text } : { role: "assistant", content: [{ type: "text", text: m.text || (busy ? ht("思考中…") : "") }], model: modelName, provider: "hermes" }} isStreaming={busy && i === messages.length - 1} onOpenFile={openFile} cwd={cwd ?? undefined} /></div>)}</div>}
@@ -312,8 +311,7 @@ function HermesWorkspace() {
         <ChatInput ref={chatInputRef} onSend={(text, images) => void send(text, images)} onAbort={() => compacting ? compactRef.current?.abort() : void stop()} isStreaming={busy || compacting} thinkingAutoLabel={ht("跟随默认")} isAutoThinkingSelection={thinking === "auto"} thinkingLevel={thinking} onThinkingLevelChange={setThinking} availableThinkingLevels={["off","minimal","low","medium","high","xhigh","max"]} thinkingLevelMap={{off:ht("关闭"),minimal:ht("最低"),low:ht("低"),medium:ht("中"),high:ht("高"),xhigh:ht("很高"),max:ht("最高")}} onCompact={selected && !loading ? ()=>void compactSession() : undefined} model={{ provider: modelProvider || "hermes", modelId: modelName }} modelList={[...modelCatalog,...models.filter(id=>!modelCatalog.some(item=>item.id === id)).map((id) => ({ id, name: id, provider: "hermes", input: ["text", "image"] }))]} onModelChange={(provider,id) => {setModelName(id);setModelProvider(provider === "hermes" ? "" : provider);}} draftKey={`hermes:${selected ?? "new"}`} cwd={cwd} loadSkillDormancy={loadSkillDormancy} />
       </div>
     </section>
-    {filePath && <aside className="hermes-file-panel" aria-label={ht("文件预览")} inert={page !== null}><header><span>{filePath.split(/[\\/]/).at(-1)}</span><button aria-label={ht("关闭文件预览")} onClick={() => setFilePath(null)}>×</button></header><FileViewer filePath={filePath} cwd={cwd ?? undefined} onOpenFile={openFile} /></aside>}
-    {terminal && <aside className="hermes-file-panel" aria-label={ht("终端")} inert={page !== null}><header><span>{ht("终端 ·")}{terminal.cwd}</span><button aria-label={ht("关闭终端")} onClick={() => setTerminal({ ...terminal, closing: "close" })}>×</button></header><TerminalPanel tab={terminal} active onRestart={() => setTerminal({ ...terminal, closing: "restart" })} onClosed={() => setTerminal(terminal.closing === "restart" ? newTerminalTab(terminal.cwd) : null)} onCloseError={() => { setTerminal({ ...terminal, closing: undefined }); setError(ht("关闭终端失败")); }} /></aside>}
+    <HermesRightPanel ref={rightPanelRef} open={rightPanelOpen} cwd={cwd} isMobile={isMobile} inert={page !== null} onOpen={()=>setRightPanelOpen(true)} onHide={()=>setRightPanelOpen(false)} onError={setError} onExpandedChange={setRightPanelExpanded}/>
     {page && <HermesSettingsDialog section={page} onSectionChange={navigatePage} onClose={() => navigatePage(null)} onDirtyChange={setManagementDirty} models={models} model={modelName} onModelChange={id=>{setModelName(id);setModelProvider("");}} modelBusy={busy || compacting} />}
   </main>;
 }

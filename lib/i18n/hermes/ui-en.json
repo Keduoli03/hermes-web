@@ -492,5 +492,13 @@
   "复制会话链接": "Copy session link",
   "删除会话": "Delete session",
   "暂无归档会话": "No archived sessions",
-  "加载更多会话": "Load more sessions"
+  "加载更多会话": "Load more sessions",
+  "调整右侧面板宽度": "Resize right panel",
+  "右侧面板": "Right panel",
+  "还原面板宽度": "Restore panel width",
+  "展开右侧面板": "Expand right panel",
+  "隐藏右侧面板": "Hide right panel",
+  "显示右侧面板": "Show right panel",
+  "暂无打开的文件或终端": "No files or terminals open",
+  "从左侧文件浏览器打开文件，或点击终端按钮。": "Open a file from the left file browser, or use the terminal button."
 }

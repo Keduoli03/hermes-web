@@ -16,6 +16,8 @@ await context.addCookies([{ name: "pi_web_session", value: createWebSessionToken
 const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
+const terminalRequests=[];
+await page.route("**/api/terminal**",async route=>{const req=route.request();const path=new URL(req.url()).pathname;terminalRequests.push({path,method:req.method()});if(path.endsWith("/events")){await route.fulfill({contentType:"text/event-stream",body:": open\n\n"});return;}const body=req.postData()?JSON.parse(req.postData()):{};await route.fulfill({json:{id:body.id ?? path.split("/").at(-1),cwd:"/workspace"}});});
 const legacyAgentRequests = [];
 page.on("request", (req) => { const path = new URL(req.url()).pathname; if (/^\/api\/(agent|sessions|skills|models)(\/|$)/.test(path)) legacyAgentRequests.push(path); });
 await page.route("**/api/cwd/browse**", (route) => route.fulfill({ json: { path: "/workspace", parentPath: "/", directories: [] } }));
@@ -109,6 +111,12 @@ const out = join(tmpdir(), "hermes-web-qa");
 await mkdir(out, { recursive: true });
 try {
   await page.goto(origin, { waitUntil: "networkidle" });
+  // Empty conversations hide usage; the right workspace panel is an independent control.
+  assert.equal(await page.getByRole("button",{name:"会话信息与用量",exact:true}).count(),0);
+  await page.getByRole("button",{name:"显示右侧面板",exact:true}).click();
+  await page.getByText("暂无打开的文件或终端",{exact:true}).waitFor();
+  assert.equal(await page.getByRole("region",{name:"会话信息",exact:true}).count(),0);
+  await page.locator(".hermes-right-panel-toggle").click();
   // Workspace chrome stays in Pi's original locations, and the native input is compact.
   assert.equal(await page.locator(".hermes-navigation").count(), 0);
   assert.equal(await page.locator(".chat-input-textarea").getAttribute("rows"), "1");
@@ -116,8 +124,24 @@ try {
   await page.locator(".directory-picker-footer .directory-picker-action").last().click();
   await page.getByRole("complementary", { name: "会话侧栏" }).getByText("README.md", { exact: true }).waitFor();
   await page.getByRole("complementary", { name: "会话侧栏" }).getByText("README.md", { exact: true }).click();
-  await page.getByRole("complementary", { name: "文件预览" }).getByText("Workspace file", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "关闭文件预览", exact: true }).click();
+  await page.getByRole("complementary", { name: "右侧面板" }).getByText("Workspace file", { exact: true }).waitFor();
+  await page.locator(".hermes-right-panel-toggle").click();
+  await page.locator(".hermes-right-panel-toggle").click();
+  await page.getByRole("complementary",{name:"右侧面板",exact:true}).getByText("Workspace file",{exact:true}).waitFor();
+  await page.screenshot({path:join(out,"right-panel.png")});
+  await page.getByRole("button",{name:"打开终端",exact:true}).click();
+  await page.getByRole("tab",{name:/终端/}).waitFor();
+  await page.locator(".hermes-right-panel-toggle").click();
+  assert.equal(terminalRequests.some(request=>request.method === "DELETE"),false);
+  await page.locator(".hermes-right-panel-toggle").click();
+  await page.getByRole("tab",{name:/README.md/}).click();
+  await page.getByRole("complementary",{name:"右侧面板",exact:true}).getByText("Workspace file",{exact:true}).waitFor();
+  assert.equal(terminalRequests.some(request=>request.method === "DELETE"),false);
+  await page.getByRole("button",{name:"终止终端 终端",exact:true}).click();
+  await page.getByRole("tab",{name:/终端/}).waitFor({state:"hidden"});
+  await page.getByRole("button",{name:"关闭 README.md",exact:true}).click();
+  await page.getByText("暂无打开的文件或终端",{exact:true}).waitFor();
+  await page.locator(".hermes-right-panel-toggle").click();
   await page.screenshot({ path: join(out, "chat-empty.png") });
   await page.getByRole("navigation", { name: "会话", exact: true }).getByRole("button", { name: /Markdown test.*2 条消息/ }).click();
   await page.getByRole("heading", { name: "Answer" }).waitFor();
@@ -125,6 +149,9 @@ try {
   await page.screenshot({ path: join(out, "chat.png") });
   await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
   await page.getByRole("region",{name:"会话信息",exact:true}).getByText("1,200",{exact:true}).waitFor();
+  await page.locator(".hermes-right-panel-toggle").click();
+  assert.equal(await page.getByRole("region",{name:"会话信息",exact:true}).count(),1);
+  await page.locator(".hermes-right-panel-toggle").click();
   await page.screenshot({path:join(out,"session-info.png")});
   await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
   await page.getByRole("button",{name:"会话操作 Markdown test",exact:true}).click();
@@ -361,6 +388,14 @@ try {
   await page.screenshot({path:join(out,"mobile-provider-picker.png")});
   await picker.getByRole("button",{name:"OpenAI / Anthropic compatible"}).click();
   await page.screenshot({path:join(out,"mobile-provider-form.png")});
+  await page.getByRole("button",{name:"关闭设置",exact:true}).click();
+  await page.getByRole("button",{name:"打开侧栏",exact:true}).click();
+  await page.getByRole("button",{name:"新建对话",exact:true}).click();
+  assert.equal(await page.getByRole("button",{name:"会话信息与用量",exact:true}).count(),0);
+  assert.equal(await page.getByRole("region",{name:"会话信息",exact:true}).count(),0);
+  await page.getByRole("button",{name:"显示右侧面板",exact:true}).click();
+  await page.getByText("暂无打开的文件或终端",{exact:true}).waitFor();
+  await page.screenshot({path:join(out,"mobile-right-panel.png")});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false);
   assert.deepEqual(errors, []);
   assert.deepEqual(legacyAgentRequests, []);

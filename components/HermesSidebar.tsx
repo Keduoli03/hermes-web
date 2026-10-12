@@ -10,12 +10,12 @@ import { BranchIcon, ChevronIcon, FolderIcon, PencilIcon, PlusIcon, RefreshIcon,
 import type { HermesSettingsSection } from "./HermesSettingsDialog";
 
 export type HermesSessionRow = { id: string; title?: string | null; preview?: string; message_count?: number; last_active?: number; cwd?:string; git_branch?:string; pinned?:boolean; archived?:boolean };
-export function HermesUiIcon({ name }: { name: "models" | "skills" | "settings" | "sidebar" | "history" | "tools" }) {
+export function HermesUiIcon({ name }: { name: "models" | "skills" | "settings" | "sidebar" | "right-sidebar" | "history" | "tools" }) {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{
     name === "models" ? <><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" /></> :
     name === "skills" ? <><path d="m12 2-10 5 10 5 10-5-10-5Z" /><path d="m2 12 10 5 10-5M2 17l10 5 10-5" /></> :
     name === "settings" ? <><path d="M20 7h-9M14 17H5" /><circle cx="7" cy="7" r="3" /><circle cx="17" cy="17" r="3" /></> :
-    name === "sidebar" ? <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></> :
+    (name === "sidebar" || name === "right-sidebar") ? <><rect x="3" y="3" width="18" height="18" rx="2" /><path d={name === "right-sidebar" ? "M15 3v18" : "M9 3v18"} /></> :
     name === "history" ? <><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2" /></> : <path d="M14 6a5 5 0 0 0-6 6L2 18l4 4 6-6a5 5 0 0 0 6-6l-3 3-4-4 3-3Z" />
   }</svg>;
 }
