@@ -1,4 +1,49 @@
-# Pi Web
+# Hermes Web Workspace
+
+基于 [agegr/pi-web](https://github.com/agegr/pi-web) 的 MIT 开源界面，逐步适配 Hermes Agent Dashboard 与 API Server 的独立 Web 工作区。**目前仍是开发中的原型**，请勿用于公网生产或把本地服务暴露到公网。
+
+## 本机开发
+
+环境要求：Node.js ≥ 23，npm。
+
+```bash
+git clone https://github.com/Keduoli03/hermes-web.git
+cd hermes-web
+npm ci
+cp .env.example .env.local
+# 编辑 .env.local，填入你自己的本地配置
+npm run dev
+```
+
+打开终端显示的本地地址。上游 pi-web 默认开发端口为 `30141`；如端口已占用，使用 Next.js 实际启动输出中的地址。常用检查：
+
+```bash
+npx tsc --noEmit
+npm run lint
+node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-dashboard-client.test.mjs
+npm run build
+```
+
+## Hermes 接入
+
+聊天原型由服务端代理访问 Hermes API Server（`/v1/runs` 与 SSE）；浏览器只持有面板登录会话，不应持有 Hermes API key。服务端地址和 key 仅配置在本机 `.env.local`。API Server 建议只绑定 `127.0.0.1`，不要将 key 提交到仓库、Issue、截图或聊天。
+
+Dashboard `/api/status` 可用于只读状态；管理接口需 Dashboard 鉴权。若 Hermes 未提供适合独立服务的受支持 Dashboard token，管理页面会受限；不要复制运行中进程的秘密或绕过官方认证。
+
+## 当前边界
+
+- 演示环境：<https://demo.blueke.top>，仅用于验证原型。
+- 正式的 `chat.blueke.top` 尚未切换。
+- 当前有聊天原型和安全代理；Cron、Skills、Config、API Keys 等仍在适配，尚未完成。
+- 上游组件和 API 中仍有 Pi Agent 依赖，适配时需逐项替换，不能误接原 Pi 后端。
+
+## 来源与开发说明
+
+本仓库 fork 自 pi-web，版权和 MIT 许可证见 [`LICENSE`](./LICENSE)。开发前请先读 [`PORT-PLAN.md`](./PORT-PLAN.md) 与 [`AGENTS.md`](./AGENTS.md)。
+
+---
+
+## pi-web 上游 README
 
 [中文文档](./README.zh-CN.md) | [日本語](./README.ja.md) | [Русский](./README.ru.md)
 
