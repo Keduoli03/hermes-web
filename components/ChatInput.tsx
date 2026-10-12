@@ -80,6 +80,7 @@ interface Props {
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
+  thinkingAutoLabel?: string;
   /** `defaultThinkingLevel` saved in settings, starred in the reasoning menu. */
   savedDefaultThinkingLevel?: string | null;
   /** Saves a reasoning level as the default for new sessions and selects it here. */
@@ -100,6 +101,8 @@ interface Props {
   cwd?: string | null;
   /** Files picked with the attach button, handled like files dropped onto the chat. Without it the button takes images only. */
   onAttachFiles?: (files: File[]) => void;
+  /** An alternate agent backend can supply skill dormancy without calling Pi routes. */
+  loadSkillDormancy?: (cwd: string) => Promise<Record<string, boolean>>;
 }
 
 export interface ChatInputHandle {
@@ -652,7 +655,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, onDismissCompactError, compactResult, toolPreset, onToolPresetChange,
-  thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, thinkingAutoLabel,
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
@@ -662,6 +665,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   draftKey,
   cwd,
   onAttachFiles,
+  loadSkillDormancy,
   compact = false,
 }: Props, ref) {
   const { t } = useI18n();
@@ -1579,16 +1583,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const requestCwd = cwd;
     let cancelled = false;
     setSkillDormancyState({ cwd: requestCwd, values: {} });
-    fetch(`/api/skills?cwd=${encodeURIComponent(requestCwd)}`)
+    const readDormancy = loadSkillDormancy ? loadSkillDormancy(requestCwd) : fetch(`/api/skills?cwd=${encodeURIComponent(requestCwd)}`)
       .then((res) => {
         if (!res.ok) throw new Error(`skills fetch failed: ${res.status}`);
         return res.json() as Promise<Partial<SkillsResponse>>;
       })
       .then((data) => {
-        if (cancelled) return;
         const dormancy: Record<string, boolean> = {};
         for (const skill of data.skills ?? []) dormancy[skill.name] = skill.disableModelInvocation;
-        setSkillDormancyState({ cwd: requestCwd, values: dormancy });
+        return dormancy;
+      });
+    readDormancy.then((values) => {
+        if (!cancelled) setSkillDormancyState({ cwd: requestCwd, values });
       })
       .catch(() => {
         if (!cancelled) setSkillDormancyState({ cwd: requestCwd, values: {} });
@@ -1596,7 +1602,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     return () => {
       cancelled = true;
     };
-  }, [slashMenuOpen, cwd]);
+  }, [slashMenuOpen, cwd, loadSkillDormancy]);
 
   useEffect(() => {
     if (slashActiveIndex >= displayedSlashCommands.length) {
@@ -1658,7 +1664,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const resolvedThinkingLevel = thinkingLevel && thinkingLevel !== "auto" ? thinkingLevel : null;
   const thinkingDisplayLabel = (() => {
     const lvl = resolvedThinkingLevel ?? "auto";
-    if (lvl === "auto" || !thinkingLevelMap) return lvl;
+    if (lvl === "auto") return thinkingAutoLabel ?? t("chat.thinkingUseDefault");
+    if (!thinkingLevelMap) return lvl;
     return thinkingLevelMap[lvl] ?? lvl;
   })();
   const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
@@ -2582,10 +2589,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                       const isActive = lvl === "auto"
                         ? isAutoThinkingSelection
                         : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
-                      const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
+                      const desc = lvl === "auto" && thinkingAutoLabel ? thinkingAutoLabel : t(THINKING_LEVEL_DESC_KEYS[lvl]);
                       const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
-                      const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
-                      const showOriginal = mappedVal != null && mappedVal !== lvl;
+                      const displayLabel = lvl === "auto" && thinkingAutoLabel ? thinkingAutoLabel : (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
+                      const showOriginal = !thinkingAutoLabel && mappedVal != null && mappedVal !== lvl;
                       return (
                         <SelectorRow
                           key={lvl}

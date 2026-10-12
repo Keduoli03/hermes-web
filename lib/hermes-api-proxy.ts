@@ -1,4 +1,5 @@
-import { isValidWebSessionToken, PI_WEB_SESSION_COOKIE } from "@/lib/web-auth";
+import { isValidWebSessionToken, isWebPasswordEnabled, PI_WEB_SESSION_COOKIE } from "@/lib/web-auth";
+import { isApiRequestAllowed } from "@/lib/request-security";
 import { buildHermesDashboardUrl, getHermesProfileSessionToken } from "@/lib/hermes-dashboard-client";
 
 function jsonError(message: string, status: number, headers: HeadersInit = {}): Response {
@@ -15,7 +16,8 @@ export async function proxyHermesApiRequest(
   const cookieHeader = request.headers.get("cookie") ?? "";
   const cookie = cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${PI_WEB_SESSION_COOKIE}=`));
   const webToken = cookie?.slice(PI_WEB_SESSION_COOKIE.length + 1);
-  if (!isValidWebSessionToken(webToken)) {
+  const localWithoutPassword = !isWebPasswordEnabled() && ["localhost", "127.0.0.1", "[::1]"].includes(new URL(request.url).hostname) && isApiRequestAllowed(request);
+  if (!localWithoutPassword && !isValidWebSessionToken(webToken)) {
     return jsonError("Authentication required", 401);
   }
 
@@ -51,7 +53,7 @@ export async function proxyHermesApiRequest(
     if (value) headers.set(name, value);
   }
   const method = request.method.toUpperCase();
-  const body = method === "GET" || method === "DELETE" ? undefined : await request.arrayBuffer();
+  const body = method === "GET" || !request.body ? undefined : await request.arrayBuffer();
   try {
     const upstream = await fetchImpl(url, {
       method,

@@ -15,31 +15,64 @@ cp .env.example .env.local
 npm run dev
 ```
 
-打开终端显示的本地地址。上游 pi-web 默认开发端口为 `30141`；如端口已占用，使用 Next.js 实际启动输出中的地址。常用检查：
+打开终端显示的本地地址。上游 pi-web 默认开发端口为 `30141`；先检查并复用本仓库的健康开发进程。若端口属于其他应用，可为本仓库指定独立端口（例如 `node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p 30142`），不要启动两个共用本仓库 `.next` 的开发进程。常用检查：
 
 ```bash
 npx tsc --noEmit
 npm run lint
 node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-dashboard-client.test.mjs
-npm run build
+# 开发时不要运行 next build，避免破坏 .next 的开发缓存
 ```
 
 ## Hermes 接入
 
-聊天原型由服务端代理访问 Hermes API Server（`/v1/runs` 与 SSE）；浏览器只持有面板登录会话，不应持有 Hermes API key。服务端地址和 key 仅配置在本机 `.env.local`。API Server 建议只绑定 `127.0.0.1`，不要将 key 提交到仓库、Issue、截图或聊天。
+聊天由服务端代理访问 Hermes API Server（`/v1/runs` 与 SSE）；浏览器只持有面板登录会话，不应持有 Hermes API key。服务端地址和 key 仅配置在本机 `.env.local`。API Server 建议只绑定 `127.0.0.1`，不要将 key 提交到仓库、Issue、截图或聊天。
 
 Dashboard `/api/status` 可用于只读状态；管理接口需 Dashboard 鉴权。若 Hermes 未提供适合独立服务的受支持 Dashboard token，管理页面会受限；不要复制运行中进程的秘密或绕过官方认证。
+
+管理接口需要在 `.env.local` 中设置 `HERMES_DASHBOARD_URL` 和 `HERMES_DASHBOARD_SESSION_TOKEN`。官方 Dashboard 默认端口可能随安装配置不同，请填写实际服务地址。API Server 使用 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。配置面板密码时，代理要求有效的登录 cookie；无密码开发仅允许同源的回环地址请求。Dashboard 已连接而 API Server 未配置时，管理功能和历史浏览仍可使用，聊天会提示缺少接口配置。
+
+已启动本地 Hermes 桌面服务时，可通过官方回环握手连接（只写入忽略的 `.env.local`，不会输出认证令牌）：
+
+```bash
+node bin/connect-hermes-local.mjs http://127.0.0.1:实际端口
+```
+
+## 验证
+
+```bash
+node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-dashboard-client.test.mjs
+# 先启动本仓库开发服务，再运行浏览器协议测试（模拟 Hermes 响应，不写真实数据）
+node --experimental-strip-types e2e/hermes-workspace.mjs
+node --experimental-strip-types --test lib/hermes-config-form.test.mjs lib/hermes-i18n.test.mjs
+# 已连接本地 Dashboard 后，只读检查真实设置界面
+node e2e/hermes-live-settings.mjs
+# 可设置 HERMES_TEST_URL 和 HERMES_TEST_BROWSER=msedge 或 chrome
+```
+
+浏览器协议测试覆盖语言切换、模型提供商与模型发现、记忆下拉框、表单/YAML 保存、管理页请求体、失败后保留草稿、Markdown/SSE 和移动端导航。截图保存在系统临时目录 `hermes-web-qa`。只读联调脚本验证真实 Dashboard schema 与设置控件，不写入用户配置；聊天真实联调仍需 API Server 的认证配置。
 
 ## 当前边界
 
 - 演示环境：<https://demo.blueke.top>，仅用于验证原型。
 - 正式的 `chat.blueke.top` 尚未切换。
-- 当前有聊天原型和安全代理；Cron、Skills、Config、API Keys 等仍在适配，尚未完成。
+- 聊天复用 Pi Web 的 MessageView、Markdown、主题和代码高亮；支持历史会话、流式回复、工具活动、审批、停止和模型选择。
+- Cron 支持任务列表、新建、编辑、暂停/恢复、立即运行、删除和运行记录。
+- Skills 支持列表筛选、Markdown 预览、新建、编辑 SKILL.md 和启停。
+- Config 默认使用官方 schema 生成表单，布尔值为开关、枚举为下拉框、数值为数字输入；可切换 YAML 源码、导入/导出、还原。表单保存仅提交修改字段，源码编辑保存原始 YAML；本地 schema 已验证 896 个字段。
+- 模型管理沿用 Pi 的提供商列表与详情布局，支持添加/编辑/删除自定义提供商、协议选择、模型发现、手动模型 ID、上下文窗口和默认提供商；密钥不回填脱敏预览。
+- “记忆与上下文 → 记忆内容”以三栏展示我的笔记、用户画像和灵魂，支持 Markdown 预览、编辑、保存、取消与档案选择。通过官方接口读取 MEMORY.md、USER.md、SOUL.md，保存前检查内容是否已变化；失败时保留草稿。手机端改为单列卡片。
+- API Keys 使用官方 `/api/env`：脱敏列表、自定义变量、更新和删除；新值保存成功后清空输入。
+- Status、Logs、Usage 提供状态、日志筛选、用量汇总与按模型/日期的统计表。
+- 保留 Pi Web 的工作区结构：左侧会话和文件浏览器，底部模型/技能/设置，顶部历史/系统/工具栏，底部原版 ChatInput。
+- 设置弹窗使用左侧分类菜单和右侧内容面板，支持搜索；记忆、上下文压缩、助手行为、终端、安全、浏览器和语音各有独立入口。默认简体中文，常规页可切换界面语言，选择保存在 `hermes-web-locale`。桌面版的中文字段标签和说明已导入；表单只显示名称、简短说明和控件，不展示键名、路径与字段数量；技术标识保留在 YAML 源码中。顶部为普通面包屑；左侧功能分类可展开/收起，子分类留在同一列，技能等运行对象列表保留侧栏。文件预览及终端复用 Pi Web 组件。
+- 手机保留所有入口；管理页离开时提醒未保存修改。
+- 尚未适配官方全部高级模块（例如 Skills Hub、Channels、Profiles 和 MCP 管理）；原 Pi 后端的设置入口没有接入 Hermes 首页。
 - 上游组件和 API 中仍有 Pi Agent 依赖，适配时需逐项替换，不能误接原 Pi 后端。
 
 ## 来源与开发说明
 
-本仓库 fork 自 pi-web，版权和 MIT 许可证见 [`LICENSE`](./LICENSE)。开发前请先读 [`PORT-PLAN.md`](./PORT-PLAN.md) 与 [`AGENTS.md`](./AGENTS.md)。
+本仓库 fork 自 pi-web。本轮拉取并对照上游提交 `894e1a28dbeeb7b457c7712e495d975fe9927b89`，保留原版 ChatInput、MessageView、FileExplorer、FileViewer、DirectoryPicker、TerminalPanel 与共享 SettingsUi。版权和 MIT 许可证见 [`LICENSE`](./LICENSE)。开发前请先读 [`PORT-PLAN.md`](./PORT-PLAN.md) 与 [`AGENTS.md`](./AGENTS.md)。
 
 ---
 
@@ -248,3 +281,9 @@ See [AGENTS.md](./AGENTS.md) for the architecture notes and detailed file map.
 ## License
 
 [MIT](./LICENSE)
+
+### 偏好设置与常用配置
+
+偏好设置拆分为常规、主题、字体与缩放、聊天显示。主题卡片使用真实配色的页面骨架；界面、聊天和代码字号均使用 1 px 步进的滑块，立即应用并在浏览器中保存。聊天显示可调整推理内容的显示/默认折叠、工具预览详情、文字方向和用户气泡透明度。
+
+模型与工具、对话与任务、记忆与上下文、工作区与安全分别组织常用功能。任务执行和子任务使用按用途选择的字段，并提供审核过的中文标签/说明，不展示底层缓存及进程参数。高级表单优先展示已有中文说明的选项；完整原始配置仍可在 YAML 源码模式查看和编辑。网页显示偏好不会改写 Hermes 的模型行为配置；推理内容只展示模型实际提供的历史内容或 `reasoning.available` 事件。
