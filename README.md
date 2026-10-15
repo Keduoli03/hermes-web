@@ -36,6 +36,8 @@ Dashboard `/api/status` 可用于只读状态；管理接口需 Dashboard 鉴权
 
 同机部署时，`HERMES_DASHBOARD_URL` 使用 `http://127.0.0.1:实际端口`，默认端口为 8648。用户登录本网站后，服务端自动获取并验证 Hermes 官方本机握手；无需手动填写 `HERMES_DASHBOARD_SESSION_TOKEN`。令牌只保存在服务端内存，Hermes 重启后会重新握手；设置的“账号与访问”可查看连接状态及重新连接。Dashboard 须作为私有回环服务运行；独立开启公网 OAuth 认证的 Dashboard 不提供该握手。显式令牌仍保留给受支持的远程或手动连接方式。普通聊天继续使用已有 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。
 
+如果现有 Dashboard 会跳转到 Nous 登录，保留它的认证，另起一个仅供本项目连接的私有实例。仅把本项目地址改成 `127.0.0.1` 不会改变后端认证模式；私有实例还须覆盖继承的公网 `dashboard.public_url`。具体配置和 systemd 模板见 [私有 Dashboard 部署](docs/hermes-private-dashboard.md)。本项目的用户登录、Dashboard 管理连接和聊天 API 的认证相互独立。
+
 网站登录可以选择 Nous 官方账号，或配置一个自设管理员账号：
 
 ```dotenv
@@ -47,7 +49,7 @@ PI_WEB_ALLOWED_HOSTS=你的域名
 
 只设置密码时仍保留原密码登录；官方登录按上述独立客户端配置启用。对外访问必须有一种登录方式，未配置时展示安装提示，不开放后台管理。跨机器项目使用 `HERMES_PROJECT_PATH_MAP` 的本地挂载目录与远端目录映射；系统共享或挂载需由管理员提前建立。
 
-同机自动连接不再需要执行额外脚本。旧的手动连接脚本仍可用于诊断（只写入忽略的 `.env.local`，不会输出认证令牌）：
+已配置私有 Dashboard 时，自动连接不再需要执行额外脚本。旧的手动连接脚本仍可用于诊断（只写入忽略的 `.env.local`，不会输出认证令牌）：
 
 ```bash
 node bin/connect-hermes-local.mjs http://127.0.0.1:实际端口

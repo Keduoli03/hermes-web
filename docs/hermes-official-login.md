@@ -27,6 +27,9 @@ server-to-server Dashboard token/API key.
    in its private loopback mode; a separately gated public Dashboard does
    not expose this handshake. Explicit tokens remain available for supported
    remote/manual installations. API Server URL/key are separate server settings.
+   A public `dashboard.public_url` can engage the gate even on a loopback bind.
+   For an existing public Dashboard, keep its auth and add a separate private
+   backend using [Private Dashboard Deployment](hermes-private-dashboard.md).
 4. Run the panel behind HTTPS, preserving the original `Host` header. Restart
    the panel after changing environment variables. The registered callback,
    public URL and actual browser hostname must agree. Root-origin deployments

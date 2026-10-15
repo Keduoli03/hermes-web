@@ -1,0 +1,20 @@
+# Replace every @PLACEHOLDER@ before installing. Use the existing Hermes user/home.
+# This unit is private backend infrastructure; do not publish or proxy its port.
+[Unit]
+Description=Private Hermes Dashboard for Hermes Web
+After=network.target
+
+[Service]
+Type=simple
+User=@HERMES_USER@
+WorkingDirectory=@HERMES_HOME@
+Environment="HERMES_HOME=@HERMES_HOME@"
+Environment="HERMES_DASHBOARD_PUBLIC_URL=http://127.0.0.1:8649"
+ExecStart=@HERMES_BIN@ dashboard --host 127.0.0.1 --port 8649 --isolated --no-open
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
