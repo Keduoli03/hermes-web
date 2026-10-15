@@ -45,7 +45,8 @@ export function mapHermesProjectReferences(text: string, cwd: string): string {
   let result = text;
   for (const local of candidates) {
     const escaped = local.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(new RegExp(`${escaped}([\\\\/][^\\s\"'\x60<>]*)?(?=$|[\\s\"'\x60),;])`, /^[A-Za-z]:/.test(local) ? "gi" : "g"), (_match, suffix: string | undefined) => remote + (suffix?.replaceAll("\\", "/") ?? ""));
+    const tail = "([\\\\/][^\\s\"'\\x60<>]*)?(?=$|[\\s\"'\\x60),;])";
+    result = result.replace(new RegExp(escaped + tail, /^[A-Za-z]:/.test(local) ? "gi" : "g"), (_match, suffix: string | undefined) => remote + (suffix?.replaceAll("\\", "/") ?? ""));
   }
   return result;
 }
