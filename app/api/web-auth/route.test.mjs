@@ -41,7 +41,7 @@ test("configured admin username is required and never disclosed before login", a
 });
 
 test("public reverse-proxy requests require login setup even with an internal loopback URL", async () => {
-  const password=process.env.PI_WEB_PASSWORD,hosts=process.env.PI_WEB_ALLOWED_HOSTS,oauth=process.env.HERMES_WEB_OAUTH_CLIENT_ID;
+  const password=process.env.PI_WEB_PASSWORD,hosts=process.env.PI_WEB_ALLOWED_HOSTS,oauth=process.env.HERMES_WEB_OAUTH_CLIENT_ID,mode=process.env.NODE_ENV;
   try {
     process.env.PI_WEB_PASSWORD=""; process.env.PI_WEB_ALLOWED_HOSTS="panel.test"; delete process.env.HERMES_WEB_OAUTH_CLIENT_ID;
     const headers={Host:"panel.test",Origin:"https://panel.test","x-forwarded-proto":"https","sec-fetch-site":"same-origin"};
@@ -50,10 +50,15 @@ test("public reverse-proxy requests require login setup even with an internal lo
     assert.equal(proxy(new NextRequest("http://127.0.0.1:30141/api/hermes/api/config",{headers})).status,401);
     const status=await (await GET(new NextRequest("http://127.0.0.1:30141/api/web-auth",{headers}))).json();
     assert.equal(status.authenticated,false); assert.equal(status.setupRequired,true);
+    process.env.NODE_ENV="production";
+    assert.equal(proxy(new NextRequest("http://localhost/api/hermes/api/config",{headers:{Host:"localhost"}})).status,401);
+    const productionStatus=await(await GET(new NextRequest("http://localhost/api/web-auth",{headers:{Host:"localhost"}}))).json();
+    assert.equal(productionStatus.setupRequired,true);assert.equal(productionStatus.authenticated,false);
   } finally {
     process.env.PI_WEB_PASSWORD=password;
     if(hosts===undefined)delete process.env.PI_WEB_ALLOWED_HOSTS;else process.env.PI_WEB_ALLOWED_HOSTS=hosts;
     if(oauth===undefined)delete process.env.HERMES_WEB_OAUTH_CLIENT_ID;else process.env.HERMES_WEB_OAUTH_CLIENT_ID=oauth;
+    if(mode===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=mode;
   }
 });
 

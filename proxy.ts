@@ -7,7 +7,7 @@ import {
 import {
   isApiRequestAllowed,
   isApiRequestHostAllowed,
-  isLoopbackWebRequest,
+  isLocalWebDevelopment,
 } from "@/lib/request-security";
 import {
   isValidWebSessionToken,
@@ -51,7 +51,7 @@ export function proxy(request: NextRequest) {
   }
 
   const password = process.env.PI_WEB_PASSWORD;
-  if (!isWebAuthEnabled(password) && isLoopbackWebRequest(request)) {
+  if (!isWebAuthEnabled(password) && isLocalWebDevelopment(request)) {
     return NextResponse.next();
   }
 

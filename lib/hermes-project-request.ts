@@ -3,13 +3,13 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { allowFileRoot } from "./file-access";
 import { isValidWebSessionToken, isWebAuthEnabled, PI_WEB_SESSION_COOKIE } from "./web-auth";
-import { isApiRequestAllowed, isLoopbackWebRequest } from "./request-security";
+import { isApiRequestAllowed, isLocalWebDevelopment } from "./request-security";
 import { resolveHermesConnection, isLocalHermesDashboard } from "./hermes-connection.mjs";
 
 export function projectRequestDenied(request: Request): Response | null {
   if (!isApiRequestAllowed(request)) return Response.json({ error: "请求来源不允许。" }, { status: 403 });
   const cookie = request.headers.get("cookie")?.split(";").map(item => item.trim()).find(item => item.startsWith(`${PI_WEB_SESSION_COOKIE}=`))?.slice(PI_WEB_SESSION_COOKIE.length + 1);
-  const loopback = isLoopbackWebRequest(request);
+  const loopback = isLocalWebDevelopment(request);
   if (!isValidWebSessionToken(cookie) && (isWebAuthEnabled() || !loopback)) return Response.json({ error: "请先登录。" }, { status: 401 });
   return null;
 }

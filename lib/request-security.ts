@@ -70,6 +70,9 @@ export function isLoopbackWebRequest(request: Request): boolean {
   if (!origin) return false;
   return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname);
 }
+export function isLocalWebDevelopment(request: Request): boolean {
+  return process.env.NODE_ENV !== "production" && isLoopbackWebRequest(request);
+}
 
 function isUserInitiatedSessionExportNavigation(request: Request): boolean {
   if (

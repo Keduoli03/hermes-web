@@ -5,7 +5,7 @@ import {
   recordAuthSuccess,
   retryAfterSeconds,
 } from "@/lib/auth-throttle";
-import { hasJsonContentType, isApiRequestAllowed, isLoopbackWebRequest } from "@/lib/request-security";
+import { hasJsonContentType, isApiRequestAllowed, isLocalWebDevelopment } from "@/lib/request-security";
 import {
   createWebSessionToken,
   isValidBasicAuthorization,
@@ -60,11 +60,11 @@ export async function GET(request: NextRequest) {
 
   const password = process.env.PI_WEB_PASSWORD;
   const enabled = isWebAuthEnabled(password);
-  const authenticated = !enabled && isLoopbackWebRequest(request)
+  const authenticated = !enabled && isLocalWebDevelopment(request)
     || isValidBasicAuthorization(request.headers.get("authorization"), password)
     || isValidWebSessionToken(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value, password);
   return NextResponse.json(
-    { enabled, authenticated, passwordEnabled: isWebPasswordEnabled(password), ...(!enabled && !isLoopbackWebRequest(request) ? { setupRequired: true } : {}), ...(isWebUsernameRequired() ? { usernameRequired: true } : {}), official: officialLoginStatus(), ...(authenticated ? { account: officialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value)?.userId ?? null } : {}) },
+    { enabled, authenticated, passwordEnabled: isWebPasswordEnabled(password), ...(!enabled && !isLocalWebDevelopment(request) ? { setupRequired: true } : {}), ...(isWebUsernameRequired() ? { usernameRequired: true } : {}), official: officialLoginStatus(), ...(authenticated ? { account: officialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value)?.userId ?? null } : {}) },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
