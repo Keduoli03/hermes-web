@@ -1014,5 +1014,7 @@
   "账号或密码不正确": "Incorrect username or password",
   "或使用管理员账号": "Or use your administrator account",
   "账号": "Username",
-  "请先在服务器配置管理员账号密码或官方账号登录。": "Configure an administrator account or official sign-in on the server first."
+  "请先在服务器配置管理员账号密码或官方账号登录。": "Configure an administrator account or official sign-in on the server first.",
+  "草稿": "Draft",
+  "上次使用的文件夹无法访问，请重新选择文件夹。": "The previous folder is unavailable. Select a folder again."
 }

@@ -1,5 +1,13 @@
 const storageKey = "hermes-recent-projects";
+const currentKey = "hermes-current-project";
 export const recentProjectsChanged = "hermes-recent-projects-changed";
+
+export function loadCurrentHermesProject(): string | null {
+  try {
+    const saved = localStorage.getItem(currentKey);
+    return saved && saved.length <= 4096 ? saved : null;
+  } catch { return null; }
+}
 
 export function loadRecentHermesProjects(): string[] {
   try {
@@ -8,8 +16,12 @@ export function loadRecentHermesProjects(): string[] {
   } catch { return []; }
 }
 
-export function rememberHermesProject(cwd: string) {
+export function rememberHermesProject(cwd: string | null) {
+  if (!cwd) {
+    try { localStorage.removeItem(currentKey); } catch {}
+    return;
+  }
   const recent = [cwd, ...loadRecentHermesProjects().filter(path => path !== cwd)].slice(0, 8);
-  try { localStorage.setItem(storageKey, JSON.stringify(recent)); } catch {}
+  try { localStorage.setItem(currentKey, cwd); localStorage.setItem(storageKey, JSON.stringify(recent)); } catch {}
   window.dispatchEvent(new CustomEvent(recentProjectsChanged, { detail: recent }));
 }

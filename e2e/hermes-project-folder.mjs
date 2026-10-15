@@ -100,7 +100,10 @@ try {
   await textarea.fill("Do not use previous project"); await textarea.press("Enter");
   await page.waitForFunction(() => document.querySelector(".chat-input-textarea").value === "Do not use previous project");
   assert.equal(chatRequests.length, 2); assert.equal(apiRuns.length, 1);
+  failProject = false;
   await page.getByRole("button", { name: "新建对话", exact: true }).click();
+  await page.locator(".directory-picker-footer .directory-picker-action").last().click();
+  await page.locator(".hermes-session-row.active").getByText("草稿", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "打开侧栏", exact: true }).click();
   await picker.click();

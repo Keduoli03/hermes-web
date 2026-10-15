@@ -457,6 +457,8 @@ try {
   await page.getByRole("button",{name:"关闭设置",exact:true}).click();
   await page.getByRole("button",{name:"打开侧栏",exact:true}).click();
   await page.getByRole("button",{name:"新建对话",exact:true}).click();
+  await page.locator(".directory-picker-footer .directory-picker-action").last().click();
+  await page.locator(".hermes-session-row.active").getByText("草稿",{exact:true}).waitFor();
   assert.equal(await page.getByRole("button",{name:"会话信息与用量",exact:true}).count(),0);
   assert.equal(await page.getByRole("region",{name:"会话信息",exact:true}).count(),0);
   await page.getByRole("button",{name:"显示右侧面板",exact:true}).click();

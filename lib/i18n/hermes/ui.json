@@ -909,5 +909,7 @@
   "使用 Nous 官方账号登录": "hermes.ui.4bb946784ed0",
   "或使用管理员账号": "hermes.ui.c697c756f66b",
   "或使用面板密码": "hermes.ui.27fd4f94e30d",
-  "账号": "hermes.ui.311bb313fdec"
+  "账号": "hermes.ui.311bb313fdec",
+  "草稿": "hermes.ui.projectDraft",
+  "上次使用的文件夹无法访问，请重新选择文件夹。": "hermes.ui.previousProjectUnavailable"
 }
