@@ -240,6 +240,28 @@ body {
   width: 100%;
 }
 
+.web-login-official-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  text-decoration: none;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.web-login-official-button:hover { background: var(--accent-hover); }
+.web-login-official-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.web-login-alternative { margin: 20px 0 12px; color: var(--text-muted); font-size: 12px; text-align: center; }
+.web-login-official p { font-size: 13px; color: var(--text-muted); line-height: 1.7; }
+.hermes-account-settings { border-top: 1px solid var(--border); margin-top: 16px; }
+.hermes-account-settings strong { display: flex; align-items: center; gap: 8px; }
+.hermes-account-id { overflow-wrap: anywhere; font-family: var(--font-mono); }
+
 .web-login-composer {
   display: flex;
   align-items: center;

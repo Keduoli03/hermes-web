@@ -11,7 +11,7 @@ import {
 import {
   isValidWebSessionToken,
   isValidBasicAuthorization,
-  isWebPasswordEnabled,
+  isWebAuthEnabled,
   PI_WEB_SESSION_COOKIE,
 } from "@/lib/web-auth";
 
@@ -26,9 +26,10 @@ function tooManyAttempts(retryAfterMs: number): NextResponse {
 }
 
 export function proxy(request: NextRequest) {
+  const oauthCallback = request.nextUrl.pathname === "/api/web-auth/official/callback";
   const isApiRequest = request.nextUrl.pathname === "/api"
     || request.nextUrl.pathname.startsWith("/api/");
-  const isTrustedRequest = isApiRequest
+  const isTrustedRequest = isApiRequest && !oauthCallback
     ? isApiRequestAllowed(request)
     : isApiRequestHostAllowed(request);
 
@@ -40,10 +41,7 @@ export function proxy(request: NextRequest) {
   }
 
   const password = process.env.PI_WEB_PASSWORD;
-  if (!isWebPasswordEnabled(password)) {
-    if (request.nextUrl.pathname === "/login") {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
+  if (!isWebAuthEnabled(password)) {
     return NextResponse.next();
   }
 
@@ -66,7 +64,7 @@ export function proxy(request: NextRequest) {
       ? NextResponse.redirect(new URL("/", request.url))
       : NextResponse.next();
   }
-  if (request.nextUrl.pathname === "/api/web-auth") return NextResponse.next();
+  if (["/api/web-auth", "/api/web-auth/official/start", "/api/web-auth/official/callback"].includes(request.nextUrl.pathname)) return NextResponse.next();
 
   if (!authenticated) {
     if (!isApiRequest) {

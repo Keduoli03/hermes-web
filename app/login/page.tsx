@@ -1,8 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useEffect, useState, type FormEvent } from "react";
+import { ArrowRight, LogIn } from "lucide-react";
 import { I18nProvider, useI18n } from "@/hooks/useI18n";
+import { useHermesI18n } from "@/hooks/useHermesI18n";
 import { safeLoginDestination } from "@/lib/login-destination";
 
 function safeDestination(): string {
@@ -12,9 +15,20 @@ function safeDestination(): string {
 
 function LoginForm() {
   const { t } = useI18n();
+  const { ht } = useHermesI18n();
+  const [status, setStatus] = useState<{enabled: boolean; passwordEnabled: boolean; official: {enabled: boolean; ready: boolean}} | null>(null);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    if (new URLSearchParams(window.location.search).has("auth_error")) setError(ht("官方登录未完成，请重试并确认账号有权访问此面板。"));
+    fetch("/api/web-auth", { signal: controller.signal, cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error("Auth status unavailable");
+      setStatus(await response.json());
+    }).catch(() => { if (!controller.signal.aborted) setError(ht("无法读取登录配置，请刷新重试。")); });
+    return () => controller.abort();
+  }, [ht]);
 
   const failureMessage = async (response: Response): Promise<string> => {
     if (response.status === 401) return t("auth.invalidPassword");
@@ -51,11 +65,17 @@ function LoginForm() {
         <header className="web-login-brand">
           <Image src="/icons/apple-touch-icon.png" width={52} height={52} alt="" priority />
           <div>
-            <h1>Pi Web</h1>
-            <p>{t("auth.prompt")}</p>
+            <h1>Hermes Web</h1>
+            <p>{ht("登录后访问你的 Hermes 面板。")}</p>
           </div>
         </header>
-        <form className="web-login-form" onSubmit={submit}>
+        {!status && <p role="status">{ht("正在读取登录方式…")}</p>}
+        {status && !status.enabled && <div className="web-login-official"><p>{ht("未启用登录验证")}</p><Link href="/">{ht("返回面板")}</Link></div>}
+        {status?.official.enabled && <div className="web-login-official">
+          {status.official.ready ? <a className="web-login-official-button" href={`/api/web-auth/official/start?next=${encodeURIComponent(typeof window === "undefined" ? "/" : safeDestination())}`}><LogIn size={17} aria-hidden="true" />{ht("使用 Nous 官方账号登录")}<ArrowRight size={16} aria-hidden="true" /></a> : <p role="status">{ht("官方登录配置尚未完成，请联系面板管理员。")}</p>}
+        </div>}
+        {status?.passwordEnabled && <form className="web-login-form" onSubmit={submit}>
+          {status.official.enabled && <p className="web-login-alternative">{ht("或使用面板密码")}</p>}
           <div className="web-login-composer">
             <label className="web-login-label" htmlFor="web-login-password">{t("auth.password")}</label>
             <input
@@ -70,20 +90,17 @@ function LoginForm() {
               disabled={busy}
             />
             <button type="submit" disabled={busy || !password}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="2" y1="7" x2="11" y2="7" />
-                <polyline points="7.5 3 12 7 7.5 11" />
-              </svg>
+              <ArrowRight size={14} aria-hidden="true" />
               {busy ? t("auth.loggingIn") : t("auth.logIn")}
             </button>
           </div>
-          <p className="web-login-error" role="alert" aria-live="polite">{error}</p>
-        </form>
+        </form>}
+        <p className="web-login-error" role="alert" aria-live="polite">{error}</p>
       </div>
     </main>
   );
 }
 
 export default function LoginPage() {
-  return <I18nProvider><LoginForm /></I18nProvider>;
+  return <I18nProvider initialLocale="zh-CN" storageKey="hermes-web-locale"><LoginForm /></I18nProvider>;
 }

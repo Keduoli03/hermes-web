@@ -12,9 +12,12 @@ import {
   isValidWebPassword,
   isValidWebSessionToken,
   isWebPasswordEnabled,
+  isWebAuthEnabled,
   PI_WEB_SESSION_COOKIE,
   PI_WEB_SESSION_MAX_AGE,
 } from "@/lib/web-auth";
+import { officialLoginStatus, OAUTH_FLOW_COOKIE } from "@/lib/web-oauth";
+import { officialSession, revokeOfficialSession, takeLoginFlow } from "@/lib/web-oauth-store.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -54,12 +57,12 @@ export async function GET(request: NextRequest) {
   }
 
   const password = process.env.PI_WEB_PASSWORD;
-  const enabled = isWebPasswordEnabled(password);
+  const enabled = isWebAuthEnabled(password);
   const authenticated = !enabled
     || isValidBasicAuthorization(request.headers.get("authorization"), password)
     || isValidWebSessionToken(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value, password);
   return NextResponse.json(
-    { enabled, authenticated },
+    { enabled, authenticated, passwordEnabled: isWebPasswordEnabled(password), official: officialLoginStatus(), ...(authenticated ? { account: officialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value)?.userId ?? null } : {}) },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -111,7 +114,10 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
+  revokeOfficialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value);
+  takeLoginFlow(request.cookies.get(OAUTH_FLOW_COOKIE)?.value);
   const response = NextResponse.json({ ok: true });
+  response.cookies.set({ name: OAUTH_FLOW_COOKIE, value: "", httpOnly: true, sameSite: "lax", secure: isSecureRequest(request), path: "/api/web-auth/official", maxAge: 0 });
   clearSessionCookie(response, request);
   return response;
 }

@@ -1,5 +1,7 @@
 # Models and provider auth
 
+- Hermes model management opens a provider card grid instead of a second provider sidebar. Card dropdowns reuse ModelSelector with an optional 320px menu-height cap; the default behavior of chat selectors is unchanged. Choosing a model or a model tag changes the current conversation selection and carries its provider id through HermesSettingsDialog to HermesChat. Only the explicit default action calls `/api/model/set`, retaining expensive-model confirmation. Custom model refresh uses the server-only discovery adapter; editing opens the existing guarded form with a back button. Card metadata comes from official model options and saved endpoints, not guessed URLs or credentials.
+
 ## Model defaults for new sessions
 `GET /api/models` returns `defaultModel` from `~/.pi/agent/settings.json`; `ChatWindow` pre-selects it for new sessions. Browser model/thinking picks are applied atomically while the AgentSession is built and are **session-scoped**: neither startup nor a mid-session `set_model` / `set_thinking_level` writes `settings.json`, as pi's `/model` and `/thinking` persist only on Ctrl+S (otherwise a one-off pick becomes the TUI's default too).
 

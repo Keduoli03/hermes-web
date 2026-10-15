@@ -90,6 +90,7 @@ function startServer({ port, hostname, openBrowser }) {
 
   const loopbackHostnames = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
   const passwordEnabled = Boolean(process.env.PI_WEB_PASSWORD);
+  const officialLoginEnabled = Boolean(process.env.HERMES_WEB_OAUTH_CLIENT_ID?.trim());
 
   if (!fs.existsSync(nextDir)) {
     console.error("Build artifacts not found. Please report this issue.");
@@ -105,7 +106,9 @@ function startServer({ port, hostname, openBrowser }) {
   }
 
   if (!loopbackHostnames.has(hostname)) {
-    if (passwordEnabled) {
+    if (officialLoginEnabled) {
+      console.warn("Nous official login is enabled. Use the configured HTTPS public URL and preserve Host through the reverse proxy.");
+    } else if (passwordEnabled) {
       console.warn(
         `Warning: pi-web is listening on ${hostname} with password authentication over HTTP. Use HTTPS or a trusted VPN to protect the password in transit.`,
       );

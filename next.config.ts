@@ -18,6 +18,8 @@ const gfmAutolinkEmailLoader = join(configDir, "lib/gfm-autolink-email-loader.cj
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: configDir,
+  // Keep the development badge from covering the activity rail's profile action.
+  devIndicators: false,
   experimental: {
     // proxy.ts matches /api/:path*, and Next buffers the request body whenever
     // a proxy is present, capped at 10 MB by default. The upload route accepts

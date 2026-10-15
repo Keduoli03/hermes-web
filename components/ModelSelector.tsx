@@ -24,6 +24,7 @@ interface ModelSelectorProps {
   ariaLabel?: string;
   variant?: "toolbar" | "field";
   placement?: "up" | "auto";
+  maxMenuHeight?: number;
   /** The model new sessions start with; its row gets a filled star. */
   defaultValue?: { provider: string; modelId: string } | null;
   /** Shows a star on every row that saves it as the default. */
@@ -56,6 +57,7 @@ export function ModelSelector({
   ariaLabel,
   variant = "toolbar",
   placement = "up",
+  maxMenuHeight,
   defaultValue,
   onSetDefault,
 }: ModelSelectorProps) {
@@ -227,7 +229,7 @@ export function ModelSelector({
         const spaceAbove = anchorRect.top - 8;
         const spaceBelow = viewportHeight - anchorRect.bottom - 8;
         const openAbove = placement === "up" || spaceAbove > spaceBelow;
-        const maxHeight = Math.max(120, Math.min(openAbove ? spaceAbove : spaceBelow, viewportHeight * 0.6));
+        const maxHeight = Math.max(120, Math.min(openAbove ? spaceAbove : spaceBelow, viewportHeight * 0.6, maxMenuHeight ?? Infinity));
         const verticalPosition = openAbove
           ? { bottom: viewportHeight - anchorRect.top + 6 }
           : { top: anchorRect.bottom + 6 };

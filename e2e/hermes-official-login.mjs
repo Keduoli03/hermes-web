@@ -1,0 +1,47 @@
+// Real login page with deterministic auth metadata; no Portal login or config writes.
+import assert from "node:assert/strict";
+import { chromium } from "playwright";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+const origin = process.env.HERMES_TEST_URL ?? "http://127.0.0.1:30142";
+const browser = await chromium.launch({ headless:true, channel:process.env.HERMES_TEST_BROWSER ?? "msedge" });
+const context = await browser.newContext({ viewport:{width:1365,height:900} });
+const page = await context.newPage();
+const errors = [];
+page.on("pageerror", error => errors.push(error.message));
+let status = {enabled:true,authenticated:false,passwordEnabled:true,official:{enabled:true,ready:true}};
+await page.route("**/api/web-auth", route => route.fulfill({json:status}));
+const out = join(tmpdir(),"hermes-web-qa");
+await mkdir(out,{recursive:true});
+try {
+  await page.goto(`${origin}/login?next=${encodeURIComponent("/?session=fixture")}`,{waitUntil:"networkidle"});
+  const official = page.getByRole("link",{name:"使用 Nous 官方账号登录",exact:true});
+  await official.waitFor();
+  const url = new URL(await official.getAttribute("href"),origin);
+  assert.equal(url.pathname,"/api/web-auth/official/start");
+  assert.equal(new URL(url.searchParams.get("next"),origin).search,"?session=fixture");
+  assert.deepEqual(await page.locator(".web-login-shell input").evaluateAll(nodes=>nodes.map(node=>node.type)),["password"],"only the panel backup password is collected locally");
+  await page.getByLabel("密码",{exact:true}).waitFor();
+  await page.screenshot({path:join(out,"official-login-desktop.png")});
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth),true);
+  await page.screenshot({path:join(out,"official-login-mobile.png")});
+  status = {...status,passwordEnabled:false};
+  await page.reload({waitUntil:"networkidle"});
+  await official.waitFor();
+  assert.equal(await page.locator('input[type="password"]').count(),0);
+  await page.evaluate(()=>localStorage.setItem("hermes-web-locale","en"));
+  await page.reload({waitUntil:"networkidle"});
+  await page.getByRole("link",{name:"Sign in with Nous",exact:true}).waitFor();
+  status = {...status,official:{enabled:true,ready:false}};
+  await page.reload({waitUntil:"networkidle"});
+  await page.getByText("Official sign-in is not fully configured. Contact the panel administrator.",{exact:true}).waitFor();
+  assert.equal(await page.getByRole("link",{name:"Sign in with Nous",exact:true}).count(),0);
+  status = {...status,official:{enabled:true,ready:true}};
+  await page.goto(`${origin}/login?auth_error=official`,{waitUntil:"networkidle"});
+  await page.getByRole("alert").getByText(/Official sign-in did not complete/).waitFor();
+  assert.deepEqual(errors,[]);
+  console.log("PASS: official login UI, password backup, Chinese/English, mobile layout and setup/error states. No external sign-in or config writes.");
+} finally {await browser.close();}

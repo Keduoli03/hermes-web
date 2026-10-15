@@ -7,6 +7,7 @@ const words: Record<string, string> = {
 const keyFor = (key: string) => key.replace(/_([a-z0-9])/g, (_, character: string) => character.toUpperCase());
 const pack = (locale: string) => locale === "en" ? copy.en : copy["zh-CN"];
 const reviewed: Record<string, { label: string; description: string }> = {
+  "terminal.cwd": { label: "默认工作目录", description: "未指定项目目录时使用。聊天中选择的项目文件夹优先。" },
   "agent.max_turns": { label: "最大执行步数", description: "一次任务中允许模型调用工具的轮次上限。" },
   "agent.service_tier": { label: "快速响应模式", description: "选择标准响应、始终加速、自动加速或仅首轮加速。" },
   "agent.image_input_mode": { label: "图片输入方式", description: "选择如何将图片附件提供给模型。" },

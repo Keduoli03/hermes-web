@@ -7,7 +7,7 @@ import { hermesJson } from "@/lib/hermes-client";
 import { configDocument, configFieldFromDocument, configPatch, getObjectField, updateConfigField, type ConfigFieldSchema, type ConfigSchema } from "@/lib/hermes-config-form";
 import { configLabel, configDescription, configOption, hasReviewedConfigCopy } from "@/lib/i18n/hermes/config-copy";
 import { hermesLabel } from "@/lib/hermes-display";
-import { configControlOverrides } from "@/lib/hermes-settings-fields";
+import { configControlOverrides, dedicatedConfigCategories, isConfigFieldApplicable, isWebConfigField } from "@/lib/hermes-settings-fields";
 import { ConfigButton, ConfigEmptyState, ConfigFooter, ConfigNotice, ConfigDetail, ConfigSwitch } from "./SettingsUi";
 
 const categories: Record<string, string> = { general: "通用", agent: "任务执行", terminal: "终端", display: "显示", delegation: "子任务", memory: "记忆", compression: "上下文压缩", security: "安全", browser: "浏览器", voice: "语音", tts: "文字转语音", stt: "语音转文字", logging: "日志", auxiliary: "辅助模型", attachments: "附件", bot_desktop: "桌面助手", curator: "整理器", database: "数据库", desktop: "桌面", gateway: "网关", kanban: "看板", local_runtime: "本地运行环境", model_catalog: "模型目录", openrouter: "OpenRouter", sessions: "会话", tool_loop_guardrails: "工具循环保护", tool_output: "工具输出", updates: "更新", providers: "提供商", runtime: "运行环境", checkpoint: "检查点", egress: "网络出口", proxy: "代理" };
@@ -44,12 +44,12 @@ export function HermesConfigEditor({ onDirtyChange, allowedCategories, category:
   }, [dirty]);
   const parsed = useMemo(() => { try { return { document: configDocument(source), error: "" }; } catch (e) { return { document: null, error: e instanceof Error ? e.message : String(e) }; } }, [source]);
   const orderedCategories = useMemo(() => {
-    const all = [...new Set(Object.entries(schema.fields).filter(([key]) => (visibleKeys ? visibleKeys.includes(key) : hasReviewedConfigCopy(key))).map(([,field]) => field.category ?? "general").filter((name) => !allowedCategories || allowedCategories.includes(name)))];
+    const all = [...new Set(Object.entries(schema.fields).filter(([key]) => isWebConfigField(key) && (visibleKeys ? visibleKeys.includes(key) : hasReviewedConfigCopy(key))).map(([,field]) => field.category ?? "general").filter((name) => allowedCategories ? allowedCategories.includes(name) : !dedicatedConfigCategories.includes(name)))];
     return [...(schema.category_order ?? []).filter((name) => all.includes(name)), ...all.filter((name) => !schema.category_order?.includes(name)).sort()];
   }, [schema, allowedCategories, visibleKeys]);
   useEffect(() => { onCategoriesChange?.(orderedCategories.map(id => ({id, label: ht(categories[id] ?? hermesLabel(id))}))); }, [orderedCategories, ht, onCategoriesChange]);
   const selectedCategory = orderedCategories.includes(requestedCategory) ? requestedCategory : orderedCategories[0];
-  const visibleFields = Object.entries(schema.fields).filter(([key, field]) => (visibleKeys ? visibleKeys.includes(key) : hasReviewedConfigCopy(key)) && (!allowedCategories || allowedCategories.includes(field.category ?? "general")) && (filter.trim() ? `${key} ${fieldLabel(key)} ${configDescription(key, field.description, locale)} ${categories[field.category ?? "general"] ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()) : (field.category ?? "general") === selectedCategory));
+  const visibleFields = Object.entries(schema.fields).filter(([key, field]) => isWebConfigField(key) && (visibleKeys ? visibleKeys.includes(key) : hasReviewedConfigCopy(key)) && orderedCategories.includes(field.category ?? "general") && isConfigFieldApplicable(key, name => parsed.document ? configFieldFromDocument(parsed.document, name, getObjectField(resolved, name)) : getObjectField(resolved, name)) && (filter.trim() ? `${key} ${fieldLabel(key)} ${configDescription(key, field.description, locale)} ${categories[field.category ?? "general"] ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase()) : (field.category ?? "general") === selectedCategory));
   function changeField(key: string, value: unknown) {
     try { setSource(updateConfigField(source, key, value)); changed.current.add(key); setNotice(""); setError(""); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }

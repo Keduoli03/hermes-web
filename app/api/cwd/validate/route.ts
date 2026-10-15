@@ -5,6 +5,7 @@ import { isAbsolute, resolve } from "path";
 import { allowFileRoot } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
 import { resolveProject } from "@/lib/worktree";
+import { fromHermesProjectPath } from "@/lib/hermes-project-paths";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return homedir();
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Path is required" }, { status: 400 });
     }
 
-    const normalizedCwd = normalizeCwd(cwd);
+    const normalizedCwd = normalizeCwd(body && "hermes" in body && body.hermes === true ? fromHermesProjectPath(cwd) : cwd);
     let stat: Stats;
     try {
       stat = statSync(normalizedCwd);
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       cwd: normalizedCwd,
+      mapped: Boolean(process.env.HERMES_PROJECT_PATH_MAP),
       projectRoot: project.projectRoot,
       projectKey: projectIdentityKey(project.projectRoot),
     });

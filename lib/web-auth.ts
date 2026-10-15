@@ -1,8 +1,13 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { isOfficialLoginEnabled, officialSession } from "./web-oauth-store.mjs";
 
 export const PI_WEB_AUTH_USERNAME = "pi";
 export const PI_WEB_SESSION_COOKIE = "pi_web_session";
 export const PI_WEB_SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+
+export function isWebAuthEnabled(password = process.env.PI_WEB_PASSWORD): boolean {
+  return isWebPasswordEnabled(password) || isOfficialLoginEnabled();
+}
 
 function hashSecret(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
@@ -71,6 +76,7 @@ export function isValidWebSessionToken(
   password = process.env.PI_WEB_PASSWORD,
   now = Date.now(),
 ): boolean {
+  if (token?.startsWith("nous.")) return Boolean(officialSession(token, now));
   if (!token || !isWebPasswordEnabled(password)) return false;
 
   const match = /^(v1\.(\d+)\.[a-f0-9]{32})\.([a-f0-9]{64})$/.exec(token);

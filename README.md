@@ -26,11 +26,15 @@ node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-
 
 ## Hermes 接入
 
-聊天由服务端代理访问 Hermes API Server（`/v1/runs` 与 SSE）；浏览器只持有面板登录会话，不应持有 Hermes API key。服务端地址和 key 仅配置在本机 `.env.local`。API Server 建议只绑定 `127.0.0.1`，不要将 key 提交到仓库、Issue、截图或聊天。
+服务器部署可使用 Nous 官方账号登录，支持额外的账号白名单和密码备用入口。设置 `HERMES_WEB_OAUTH_CLIENT_ID` 即启用认证；需要注册独立客户端及服务器域名回调，详见 [官方登录配置](docs/hermes-official-login.md)。登录会话和一次性登录流程持久化到 `HERMES_WEB_DATA_DIR/auth`（默认 `~/.hermes-web/auth`），重启后仍有效，多个进程共享该目录时可读取相同登录状态和撤销结果。登录有效期仍受官方令牌限制。
+
+普通聊天由服务端代理访问 Hermes API Server（`/v1/runs` 与 SSE）。选择项目文件夹的聊天使用官方 Dashboard WebSocket：在发送前为该会话设置真实工作目录，文件浏览、上传和新终端也使用这个目录。浏览器只持有面板登录会话，不应持有 Hermes API key。服务端地址和 key 仅配置在本机 `.env.local`。API Server 建议只绑定 `127.0.0.1`，不要将 key 提交到仓库、Issue、截图或聊天。
+
+项目聊天已接入文本、图片、推理、工具活动、执行确认、澄清表单和停止。澄清支持单选、多选、自由输入、多问题及跳过，兼容旧通知协议与新 JSON-RPC 服务端请求。普通和项目聊天由服务端保留事件，断线自动重连；本标签页刷新后恢复原运行，不重新发送提示词。事件保留至运行结束后 30 分钟，应用进程重启后须重新打开已保存历史；聊天部署采用单进程或对运行请求保持粘性路由。
 
 Dashboard `/api/status` 可用于只读状态；管理接口需 Dashboard 鉴权。若 Hermes 未提供适合独立服务的受支持 Dashboard token，管理页面会受限；不要复制运行中进程的秘密或绕过官方认证。
 
-管理接口需要在 `.env.local` 中设置 `HERMES_DASHBOARD_URL` 和 `HERMES_DASHBOARD_SESSION_TOKEN`。官方 Dashboard 默认端口可能随安装配置不同，请填写实际服务地址。API Server 使用 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。配置面板密码时，代理要求有效的登录 cookie；无密码开发仅允许同源的回环地址请求。Dashboard 已连接而 API Server 未配置时，管理功能和历史浏览仍可使用，聊天会提示缺少接口配置。
+管理接口需要在 `.env.local` 中设置 `HERMES_DASHBOARD_URL` 和 `HERMES_DASHBOARD_SESSION_TOKEN`。官方 Dashboard 默认端口可能随安装配置不同，请填写实际服务地址。API Server 使用 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。配置面板密码时，代理要求有效的登录 cookie；无密码开发仅允许同源的回环地址请求。Dashboard 已连接而 API Server 未配置时，管理功能、历史浏览和项目聊天仍可使用，普通聊天会提示缺少接口配置。跨机器项目使用 `HERMES_PROJECT_PATH_MAP` 的本地挂载目录与远端目录映射：文件浏览、上传、终端使用本地挂载目录，Hermes 会话使用对应远端目录；需先通过系统共享或挂载让两端访问同一份文件，不会自动建立 SSH 或文件同步。
 
 已启动本地 Hermes 桌面服务时，可通过官方回环握手连接（只写入忽略的 `.env.local`，不会输出认证令牌）：
 
@@ -43,14 +47,20 @@ node bin/connect-hermes-local.mjs http://127.0.0.1:实际端口
 ```bash
 node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-dashboard-client.test.mjs
 # 先启动本仓库开发服务，再运行浏览器协议测试（模拟 Hermes 响应，不写真实数据）
+npm run test:e2e
+# 可以筛选套件：npm run test:e2e -- completion workspace
 node --experimental-strip-types e2e/hermes-workspace.mjs
+node --test lib/hermes-project-rpc.test.mjs
+node --experimental-strip-types e2e/hermes-project-folder.mjs
+# 真实目录只读确认，不创建会话、不调用模型
+node --experimental-strip-types e2e/hermes-project-live.mjs
 node --experimental-strip-types --test lib/hermes-config-form.test.mjs lib/hermes-i18n.test.mjs
 # 已连接本地 Dashboard 后，只读检查真实设置界面
 node e2e/hermes-live-settings.mjs
 # 可设置 HERMES_TEST_URL 和 HERMES_TEST_BROWSER=msedge 或 chrome
 ```
 
-浏览器协议测试覆盖语言切换、模型提供商与模型发现、记忆下拉框、表单/YAML 保存、管理页请求体、失败后保留草稿、Markdown/SSE 和移动端导航。截图保存在系统临时目录 `hermes-web-qa`。只读联调脚本验证真实 Dashboard schema 与设置控件，不写入用户配置；聊天真实联调仍需 API Server 的认证配置。
+浏览器协议测试覆盖语言切换、模型提供商与模型发现、记忆下拉框、表单/YAML 保存、管理页请求体、失败后保留草稿、Markdown/SSE 和移动端导航。项目目录测试覆盖后端确认、会话目录恢复、切换失败、缺失目录和普通聊天。截图保存在系统临时目录 `hermes-web-qa`。只读联调脚本验证真实 Dashboard schema、设置控件及目录确认，不写入用户配置，也不调用模型。
 
 ## 当前边界
 
@@ -61,13 +71,19 @@ node e2e/hermes-live-settings.mjs
 - Skills 支持列表筛选、Markdown 预览、新建、编辑 SKILL.md 和启停。
 - Config 默认使用官方 schema 生成表单，布尔值为开关、枚举为下拉框、数值为数字输入；可切换 YAML 源码、导入/导出、还原。表单保存仅提交修改字段，源码编辑保存原始 YAML；本地 schema 已验证 896 个字段。
 - 模型管理沿用 Pi 的提供商列表与详情布局，支持添加/编辑/删除自定义提供商、协议选择、模型发现、手动模型 ID、上下文窗口和默认提供商；密钥不回填脱敏预览。
-- “记忆与上下文 → 记忆内容”以三栏展示我的笔记、用户画像和灵魂，支持 Markdown 预览、编辑、保存、取消与档案选择。通过官方接口读取 MEMORY.md、USER.md、SOUL.md，保存前检查内容是否已变化；失败时保留草稿。手机端改为单列卡片。
+- “记忆与上下文 → 记忆内容”以三栏展示当前服务档案的我的笔记、用户画像和灵魂，支持 Markdown 预览、编辑、保存和取消。通过官方接口读取 MEMORY.md、USER.md、SOUL.md，保存前检查内容是否已变化；失败时保留草稿。手机端改为单列卡片。
 - API Keys 使用官方 `/api/env`：脱敏列表、自定义变量、更新和删除；新值保存成功后清空输入。
 - Status、Logs、Usage 提供状态、日志筛选、用量汇总与按模型/日期的统计表。
 - 保留 Pi Web 的工作区结构：左侧会话和文件浏览器，底部模型/技能/设置，顶部历史/系统/工具栏，底部原版 ChatInput。
 - 设置弹窗使用左侧分类菜单和右侧内容面板，支持搜索；记忆、上下文压缩、助手行为、终端、安全、浏览器和语音各有独立入口。默认简体中文，常规页可切换界面语言，选择保存在 `hermes-web-locale`。桌面版的中文字段标签和说明已导入；表单只显示名称、简短说明和控件，不展示键名、路径与字段数量；技术标识保留在 YAML 源码中。顶部为普通面包屑；左侧功能分类可展开/收起，子分类留在同一列，技能等运行对象列表保留侧栏。文件预览及终端复用 Pi Web 组件。
 - 手机保留所有入口；管理页离开时提醒未保存修改。
-- 尚未适配官方全部高级模块（例如 Skills Hub、Channels、Profiles 和 MCP 管理）；原 Pi 后端的设置入口没有接入 Hermes 首页。
+- 最左侧主导航依次为首页、技能工具、消息平台、产物、定时任务。技能工具页集中已安装技能、技能市场、MCP 和内置工具；切换页面保留当前聊天与文件面板。产物默认展示全部会话，以卡片展示图片、视频、音频、文件和代码；通过下拉框选择当前或指定会话，支持类型筛选、搜索、媒体预览与下载、Markdown 排版预览及源码切换、普通文本预览（最大 1 MB）、静态 HTML/SVG 隔离预览，也可浏览工作区文件。服务端按会话保存可重建的 JSON 索引：初次分页读取完整历史（包含压缩前记录），再次访问检查会话元数据，仅重扫变化的会话；刷新按钮强制重扫。索引默认位于 `~/.hermes-web/artifacts`，可通过 `HERMES_WEB_DATA_DIR` 指定数据目录，服务器部署时应持久化该目录。索引不复制媒体文件或修改 Hermes 原数据库；含内嵌媒体字节的会话不落盘缓存。索引最长 24 小时重新校验，无更新时间的会话缓存 1 分钟；目录不可写时仍可浏览，但无法持久缓存。媒体访问遵守 Hermes 官方文件权限，链接失效或文件被删除时提示预览失败。手动保存的历史版本独立存储，见下文。
+- 技能市场（Skills Hub）支持官方目录、来源搜索、内容预览、检查、安装、卸载和更新；后台安装按任务状态确认结果。
+- 消息渠道（Channels）支持配置当前服务档案的各平台、启停、凭据保存/清除和连接检测；Telegram / WhatsApp 支持扫码或深链接绑定、状态轮询、取消、过期提示与保存，保存后的网关重启结果由官方接口确认。
+- 配置档案（Profiles）统一从最左侧导航底部进入，各功能页不再重复提供档案选择器。支持新建、复制、改名、用途/模型编辑、默认选择、删除及后端归档路径导入、导出及归档下载；更改默认档案不会切换已运行服务或会话的档案。
+- MCP 管理支持在当前服务档案添加 HTTP/本地服务器、编辑连接、启停、删除、工具测试、OAuth 授权/取消和官方目录安装；插件提供的服务器保持只读。
+- 设置提供 Hermes 插件列表、启停、来源安装、更新、卸载和 schema 设置；Webhooks 提供启用、新建订阅、启停、删除及一次性密钥显示；配对审批提供批准待处理用户和撤销授权。多智能体任务提供运行列表、暂停/恢复派发、项目会话子任务指令、停止和输出查看，任务模型及并行限制继续使用子任务设置。操作取决于已安装 Hermes 版本实际支持的接口，旧服务会明确显示后端错误，不会改用 Pi 接口。
+- 产物预览提供手动保存版本和下载历史版本；每个产物最多 20 个不同内容版本，每个版本最大 32 MB，保存到 `HERMES_WEB_DATA_DIR/artifact-versions`，按后端及会话隔离。只保存明确选择的代码或 Hermes 管理的文件，外部链接不抓取；下载前重新验证会话和产物访问权。
 - 上游组件和 API 中仍有 Pi Agent 依赖，适配时需逐项替换，不能误接原 Pi 后端。
 
 ## 来源与开发说明

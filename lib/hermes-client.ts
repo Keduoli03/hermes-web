@@ -1,6 +1,6 @@
 /** Browser requests always go through the authenticated, server-side proxy. */
 const errorLabels: Record<string, string> = {
-  "Authentication required": "请先配置面板登录密码并登录。",
+  "Authentication required": "登录已过期或尚未登录，请重新登录面板。",
   "Hermes dashboard session authentication is not configured": "尚未配置 Hermes 管理服务的认证令牌。",
   "Hermes dashboard authentication is not configured": "尚未配置 Hermes 管理服务的认证令牌。",
   "Hermes API authentication is not configured": "尚未配置 Hermes 接口服务的密钥。",

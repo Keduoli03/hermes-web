@@ -1,11 +1,13 @@
-const SAFE_API_PATH = /^\/(?:api|v1|health)(?:\/[A-Za-z0-9_./{}-]*)?$/;
+export function isSafeHermesApiSegment(segment: string): boolean {
+  return Boolean(segment) && segment !== "." && segment !== ".." && /^[\p{L}\p{M}\p{N}_ .:{}@()+-]+$/u.test(segment);
+}
 
 export function buildHermesDashboardUrl(path: string, query = "", baseUrl = process.env.HERMES_DASHBOARD_URL ?? "http://127.0.0.1:8648"): string {
-  if (!path.startsWith("/") || path.startsWith("//") || !SAFE_API_PATH.test(path)) {
+  if (!path.startsWith("/") || path.startsWith("//") || !["api", "v1", "health"].includes(path.split("/")[1])) {
     throw new Error("Hermes dashboard path must be a relative API path");
   }
   const segments = path.split("/");
-  if (segments.some((segment) => segment === "." || segment === "..")) {
+  if (segments.slice(1).some((segment) => !isSafeHermesApiSegment(segment))) {
     throw new Error("Hermes dashboard path contains an unsafe API path segment");
   }
   const base = new URL(baseUrl);
@@ -15,7 +17,7 @@ export function buildHermesDashboardUrl(path: string, query = "", baseUrl = proc
   if (base.username || base.password || base.search || base.hash) {
     throw new Error("Hermes dashboard URL cannot contain credentials, query, or fragment");
   }
-  const url = new URL(path, base);
+  const url = new URL(`/${segments.slice(1).map(encodeURIComponent).join("/")}`, base);
   if (url.origin !== base.origin) {
     throw new Error("Hermes dashboard path escaped configured origin");
   }

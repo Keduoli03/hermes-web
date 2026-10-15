@@ -7,7 +7,7 @@ import type { ProviderChoice } from "./HermesProviderPicker";
 import { ConfigButton, ConfigDetailTitle, ConfigField, ConfigNotice } from "./SettingsUi";
 
 type Login = {session_id:string; user_code:string; verification_url:string};
-export function HermesBuiltinProviderConfig({choice, modelBusy, onDirtyChange, onModelChange}: {choice:ProviderChoice; modelBusy:boolean; onDirtyChange:(dirty:boolean)=>void; onModelChange:(model:string)=>void}) {
+export function HermesBuiltinProviderConfig({choice, modelBusy, onDirtyChange, onModelChange}: {choice:ProviderChoice; modelBusy:boolean; onDirtyChange:(dirty:boolean)=>void; onModelChange:(model:string,provider?:string)=>void}) {
   const {ht}=useHermesI18n();
   const {provider,oauth}=choice;
   const [key,setKey]=useState(""); const [model,setModel]=useState(provider.models?.[0] ?? "");
@@ -38,7 +38,7 @@ export function HermesBuiltinProviderConfig({choice, modelBusy, onDirtyChange, o
       const body={scope:"main",provider:provider.slug,model:model.trim()};
       let result=await hermesJson<{confirm_required?:boolean;confirm_message?:string}>("/api/model/set",{method:"POST",body:JSON.stringify(body)});
       if (result.confirm_required) {if (!window.confirm(result.confirm_message || ht("确认使用这个模型？"))) return;result=await hermesJson("/api/model/set",{method:"POST",body:JSON.stringify({...body,confirm_expensive_model:true})});if(result.confirm_required) throw new Error(ht("模型切换仍需确认，请在 Hermes 中检查。"));}
-      onModelChange(model.trim());setNotice(ht("默认模型已更新"));
+      onModelChange(model.trim(),provider.slug);setNotice(ht("默认模型已更新"));
     })}>{ht("设为默认模型")}</ConfigButton>{modelBusy && <ConfigNotice>{ht("对话运行时暂不能切换模型。")}</ConfigNotice>}
   </div>;
 }

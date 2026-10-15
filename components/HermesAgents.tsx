@@ -1,0 +1,27 @@
+"use client";
+import { useEffect, useState } from "react";
+import { Pause, Play, RefreshCw, Square, Send, FileText } from "lucide-react";
+import { useHermesI18n } from "@/hooks/useHermesI18n";
+import { useHermesOperation, useHermesResource } from "@/hooks/useHermesResource";
+import { hermesControl, readHermesControl } from "@/lib/hermes-control-client";
+import { ConfigButton, ConfigEmptyState, ConfigNotice } from "./SettingsUi";
+import { HermesResourceState } from "./HermesResourceState";
+type Child = { subagent_id: string; goal?: string; status?: string; model?: string; parent_id?: string; depth?: number; accepting_steer?: boolean };
+type Run = { run_id: string; session_id: string; status: string; cwd?: string };
+export function HermesAgents({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const { ht } = useHermesI18n(), op = useHermesOperation();
+  const [revision, setRevision] = useState(0), [runId, setRunId] = useState(""), [runs, setRuns] = useState<Run[]>([]), [drafts, setDrafts] = useState<Record<string, string>>({}), [tail, setTail] = useState("");
+  const status = useHermesResource<{ active: Child[]; paused: boolean; max_concurrent_children: number; max_spawn_depth: number }>("/api/hermes-control?module=agents", revision, readHermesControl);
+  const children = useHermesResource<{ subagents: Child[]; delegations?: { goal: string; error?: string; status: string }[] }>(runId ? `/api/hermes-control?module=subagents&run_id=${encodeURIComponent(runId)}` : null, revision, readHermesControl);
+  useEffect(() => { onDirtyChange(op.busy || Object.values(drafts).some(Boolean)); }, [drafts, op.busy, onDirtyChange]);
+  useEffect(() => { const controller = new AbortController(); readHermesControl<{ runs: Run[] }>("/api/hermes-session/chat", { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setRuns(data.runs.filter(run => run.status === "running" && run.cwd)); }).catch(() => {}); return () => controller.abort(); }, [revision]);
+  useEffect(() => { const timer = setInterval(() => { if (!op.busy && !document.hidden) setRevision(v => v + 1); }, 10000); return () => clearInterval(timer); }, [op.busy]);
+  const rows = runId ? children.data?.subagents ?? [] : status.data?.active ?? [];
+  async function act(child: Child, action: "interrupt" | "steer" | "tail") { await op.run(async signal => { const result = await hermesControl<{ found?: boolean; status?: string; text?: string; available?: boolean }>({ module: "subagents", action, run_id: runId, subagent_id: child.subagent_id, ...(action === "steer" ? { text: drafts[child.subagent_id] } : {}) }, signal); if (action === "interrupt" && !result.found || action === "steer" && result.status !== "queued") throw new Error(ht("此任务已结束或无法接受操作。")); if (action === "tail") setTail(result.available ? result.text || "" : ht("暂无任务输出")); else { setDrafts(old => ({ ...old, [child.subagent_id]: "" })); setRevision(v => v + 1); } }); }
+  if (!status.data && (status.loading || status.error)) return <HermesResourceState loading={status.loading} error={status.error} onRetry={() => setRevision(v => v + 1)} />;
+  return <div className="hermes-admin-page"><header><select aria-label={ht("运行会话")} value={runId} onChange={event => { setRunId(event.target.value); setTail(""); }}><option value="">{ht("全部任务")}</option>{runs.map(run => <option value={run.run_id} key={run.run_id}>{run.session_id}</option>)}</select><ConfigButton title={ht("刷新")} disabled={op.busy} onClick={() => setRevision(v => v + 1)}><RefreshCw size={16} /></ConfigButton><ConfigButton disabled={op.busy} onClick={() => void op.run(async signal => { await hermesControl({ module: "agents", action: "pause", paused: !status.data?.paused }, signal); setRevision(v => v + 1); })}>{status.data?.paused ? <Play size={16} /> : <Pause size={16} />}{ht(status.data?.paused ? "恢复任务派发" : "暂停任务派发")}</ConfigButton></header>
+    <p>{ht("并行上限：{count}；嵌套深度：{depth}", { count: status.data?.max_concurrent_children ?? "—", depth: status.data?.max_spawn_depth ?? "—" })}</p>
+    {(op.error || status.error || children.error) && <ConfigNotice>{op.error || status.error || children.error}</ConfigNotice>}
+    {!rows.length && <ConfigEmptyState>{ht(children.loading ? "正在读取任务…" : "暂无运行任务")}</ConfigEmptyState>}{rows.map(child => <div className="hermes-admin-row hermes-agent-row" key={child.subagent_id}><div><strong>{child.goal || child.subagent_id}</strong><small>{child.status} · {child.model}{child.depth !== undefined ? ` · ${child.depth}` : ""}</small></div>{runId && <form onSubmit={event => { event.preventDefault(); void act(child, "steer"); }}><input aria-label={ht("补充任务指令")} value={drafts[child.subagent_id] || ""} disabled={op.busy || child.accepting_steer === false} onChange={event => setDrafts(old => ({ ...old, [child.subagent_id]: event.target.value }))} /><ConfigButton type="submit" title={ht("发送指令")} disabled={op.busy || !drafts[child.subagent_id]?.trim()}><Send size={15} /></ConfigButton><ConfigButton title={ht("查看输出")} disabled={op.busy} onClick={() => void act(child, "tail")}><FileText size={15} /></ConfigButton><ConfigButton title={ht("停止任务")} disabled={op.busy} onClick={() => void act(child, "interrupt")}><Square size={15} /></ConfigButton></form>}</div>)}{children.data?.delegations?.map((item, index) => <ConfigNotice key={index}>{item.goal}: {item.error || item.status}</ConfigNotice>)}{tail && <pre className="hermes-agent-tail">{tail}</pre>}
+  </div>;
+}

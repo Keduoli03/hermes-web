@@ -10,6 +10,7 @@ import { FONT_FAMILY_MAX_LENGTH } from "@/lib/font-preferences";
 import { ConfigButton } from "./SettingsUi";
 import { ConfigSwitch } from "./SettingsUi";
 import { useHermesChatDisplay } from "@/hooks/useHermesChatDisplay";
+import { HermesAccountSettings } from "./HermesAccountSettings";
 
 const themes: { id: ThemePreference; label: string; description: string }[] = [
   { id: "auto", label: "跟随系统", description: "随设备自动切换浅色和深色。" },
@@ -23,7 +24,7 @@ const themes: { id: ThemePreference; label: string; description: string }[] = [
 export function HermesGeneralPreferences() {
   const { ht, locale, setLocale, supportedLocales, t } = useHermesI18n();
   const sendMode = useEnterSendMode();
-  return <div className="hermes-preferences-page"><label className="hermes-preference-row"><div><strong>{t("common.language")}</strong><p>{ht("设置界面语言，选择会保存在当前浏览器。")}</p></div><select aria-label={t("common.language")} value={locale} onChange={event => setLocale(event.target.value as typeof locale)}>{supportedLocales.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label className="hermes-preference-row"><div><strong>{ht("发送快捷键")}</strong><p>{ht("选择发送消息的按键组合。")}</p></div><select aria-label={ht("发送快捷键")} value={sendMode} onChange={event => setEnterSendMode(event.target.value as typeof sendMode)}><option value="enter">{ht("Enter 发送")}</option><option value="ctrlEnter">{ht("Ctrl / ⌘ + Enter 发送")}</option></select></label></div>;
+  return <div className="hermes-preferences-page"><label className="hermes-preference-row"><div><strong>{t("common.language")}</strong><p>{ht("设置界面语言，选择会保存在当前浏览器。")}</p></div><select aria-label={t("common.language")} value={locale} onChange={event => setLocale(event.target.value as typeof locale)}>{supportedLocales.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label className="hermes-preference-row"><div><strong>{ht("发送快捷键")}</strong><p>{ht("选择发送消息的按键组合。")}</p></div><select aria-label={ht("发送快捷键")} value={sendMode} onChange={event => setEnterSendMode(event.target.value as typeof sendMode)}><option value="enter">{ht("Enter 发送")}</option><option value="ctrlEnter">{ht("Ctrl / ⌘ + Enter 发送")}</option></select></label><HermesAccountSettings /></div>;
 }
 
 export function HermesThemePreferences() {

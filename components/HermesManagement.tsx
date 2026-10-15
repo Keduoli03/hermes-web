@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { hermesDate, hermesLabel, hermesSchedule, hermesValue } from "@/lib/hermes-display";
 import { hermesJson } from "@/lib/hermes-client";
 import { MarkdownBody } from "./MarkdownBody";
+import { HermesSkillList, skillCategory, skillSource, type HermesSkill } from "./HermesSkillList";
 import { ConfigButton, ConfigDetail, ConfigDetailHeader, ConfigDetailTitle, ConfigEmptyState, ConfigField, ConfigFooter, ConfigNotice, ConfigPanelShell, ConfigSidebar, ConfigSidebarItem, ConfigSidebarList, ConfigSplitView, ConfigSwitch } from "./SettingsUi";
 
 export type HermesPage = "chat" | "status" | "cron" | "skills" | "config" | "keys" | "logs" | "usage" | "tools";
@@ -17,7 +18,7 @@ export const hermesPages: { id: HermesPage; label: string; icon: string }[] = [
   { id: "tools", label: "工具", icon: "⚒" },
 ];
 type Job = { id: string; name?: string; prompt?: string; schedule?: string | { display?: string; value?: string; kind?: string; expr?: string; minutes?: number; run_at?: string }; paused?: boolean; next_run_at?: string; last_status?: string; profile?: string; deliver?: string; model?: string; provider?: string; skills?: string[]; script?: string; workdir?: string; no_agent?: boolean };
-type Skill = { name: string; description?: string; category?: string; enabled?: boolean; provenance?: string };
+type Skill = HermesSkill;
 type EnvEntry = { is_set?: boolean; redacted_value?: string; description?: string; category?: string };
 const scheduleText = (job: Job) => hermesSchedule(job.schedule);
 const scheduleInput = (job: Job) => {
@@ -122,17 +123,21 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
     const existing = jobs.find((j) => j.id === editingJob);
     void mutate(existing ? jobPath(existing) : "/api/cron/jobs", existing ? "PUT" : "POST", existing ? { updates: payload } : payload, "定时任务已保存", () => setShowJobForm(false));
   }
+  function createSkill() {
+    if (text !== savedText && !window.confirm(ht("放弃未保存的技能内容？"))) return;
+    setNewSkill(true); setSelected(""); setSkillName("");
+    setText(ht("---\nname: my-skill\ndescription: 技能说明\n---\n\n# 使用说明\n")); setPreview(false);
+  }
 
   return <ConfigPanelShell embedded title={hermesPages.find((p) => p.id === page)?.label ?? page} onClose={() => {}}>
-    <div className="hermes-management">
-      <div className="hermes-management-toolbar">
-        {["cron", "skills", "keys", "logs"].includes(page) && <input aria-label={ht("筛选")} placeholder={page === "keys" ? ht("搜索提供商或变量…") : ht("筛选…")} value={filter} onChange={(e) => setFilter(e.target.value)} />}
+    <div className={`hermes-management${page === "skills" ? " hermes-skills" : ""}`}>
+      {page !== "skills" && <div className="hermes-management-toolbar">
+        {["cron", "keys", "logs"].includes(page) && <input aria-label={ht("筛选")} placeholder={page === "keys" ? ht("搜索提供商或变量…") : ht("筛选…")} value={filter} onChange={(e) => setFilter(e.target.value)} />}
         {page === "cron" && <ConfigButton onClick={() => editJob()}>{ht("＋ 新建任务")}</ConfigButton>}
-        {page === "skills" && <ConfigButton onClick={() => { setNewSkill(true); setSelected(""); setSkillName(""); setText(ht("---\nname: my-skill\ndescription: 技能说明\n---\n\n# 使用说明\n")); setPreview(false); }}>{ht("＋ 新建技能")}</ConfigButton>}
         {page === "logs" && <select aria-label={ht("日志文件")} value={logFile} onChange={(e) => setLogFile(e.target.value)}><option value="agent">{ht("助手日志")}</option><option value="gateway">{ht("网关日志")}</option><option value="errors">{ht("错误日志")}</option></select>}
         {page === "usage" && <select aria-label={ht("统计天数")} value={days} onChange={(e) => setDays(e.target.value)}><option value="7">{ht("7 天")}</option><option value="30">{ht("30 天")}</option><option value="90">{ht("90 天")}</option></select>}
         <ConfigButton disabled={loading || saving || (page === "config" && text !== savedText)} onClick={() => setRevision((n) => n + 1)}>{ht("刷新")}</ConfigButton>
-      </div>
+      </div>}
       {error && <div role="alert"><ConfigNotice>{error}</ConfigNotice></div>}
       {notice && <div role="status"><ConfigNotice>{notice}</ConfigNotice></div>}
       {loading && <ConfigNotice>{ht("正在读取 Hermes…")}</ConfigNotice>}
@@ -151,15 +156,13 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
           {runs !== null && <RunHistory data={runs} />}
         </div> : <ConfigEmptyState>{ht("选择一个任务，或新建定时任务")}</ConfigEmptyState>}
       </ConfigDetail></ConfigSplitView>}
-      {page === "skills" && <ConfigSplitView><ConfigSidebar><ConfigSidebarList>
-        {skills.filter((s) => matches(`${s.name} ${s.description}`)).map((s) => <ConfigSidebarItem key={s.name} active={selected === s.name} onClick={() => { if (text !== savedText && !window.confirm(ht("放弃未保存的技能内容？"))) return; setSelected(s.name); setNewSkill(false); setPreview(true); }}><span>{s.enabled === false ? "○" : "●"} {s.name}</span><small>{hermesLabel(s.category ?? s.provenance ?? "")}</small></ConfigSidebarItem>)}
-        {!loading && !skills.length && <ConfigEmptyState>{ht("暂无技能")}</ConfigEmptyState>}
-      </ConfigSidebarList></ConfigSidebar><ConfigDetail>
-        {selected || newSkill ? <div className="hermes-form"><ConfigDetailHeader><ConfigDetailTitle>{newSkill ? ht("新建技能") : selected}</ConfigDetailTitle>{skill && <ConfigSwitch label={ht("启用 {name}", { name: selected })} checked={skill.enabled !== false} disabled={saving} onChange={(enabled) => void mutate("/api/skills/toggle", "PUT", { name: selected, enabled }, enabled ? ht("技能已启用") : ht("技能已禁用"))} />}</ConfigDetailHeader>
+      {page === "skills" && <ConfigSplitView><HermesSkillList skills={skills} query={filter} selected={selected} busy={saving} loading={loading} onQueryChange={setFilter} onCreate={createSkill} onRefresh={()=>setRevision(n=>n+1)} onSelect={s=>{if(text !== savedText && !window.confirm(ht("放弃未保存的技能内容？")))return;setSelected(s.name);setNewSkill(false);setPreview(true);}} onToggle={(s,enabled)=>void mutate("/api/skills/toggle","PUT",{name:s.name,enabled},enabled ? ht("技能已启用") : ht("技能已禁用"))}/><ConfigDetail>
+        {selected || newSkill ? <div className="hermes-form"><ConfigDetailHeader><ConfigDetailTitle>{newSkill ? ht("新建技能") : selected}</ConfigDetailTitle></ConfigDetailHeader>
+          {skill && <div className="hermes-skill-detail-meta"><span>{ht(skillCategory(skill.category))}</span>{skillSource(skill.provenance) && <span>{ht(skillSource(skill.provenance))}</span>}<span>{ht(skill.enabled === false ? "已禁用" : "已启用")}</span>{skill.usage !== undefined && <span>{ht("已使用 {count} 次",{count:skill.usage})}</span>}</div>}
           {newSkill && <ConfigField label={ht("技能名称")}><input aria-label={ht("技能名称")} value={skillName} onChange={(e) => setSkillName(e.target.value)} placeholder="my-skill" /></ConfigField>}
-          <p>{skill?.description}</p><div className="hermes-actions"><ConfigButton onClick={() => setPreview(false)} disabled={!preview}>{ht("编辑")}</ConfigButton><ConfigButton onClick={() => setPreview(true)} disabled={preview}>{ht("预览")}</ConfigButton></div>
-          {preview ? <MarkdownBody>{text}</MarkdownBody> : <textarea className="hermes-editor" aria-label={ht("SKILL.md 内容")} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />}
-          <ConfigFooter status={text !== savedText ? ht("有未保存的修改") : "SKILL.md"}><ConfigButton variant="primary" disabled={saving || loading || !text.trim() || (newSkill && !skillName.trim())} onClick={() => void mutate(newSkill ? "/api/skills" : "/api/skills/content", newSkill ? "POST" : "PUT", { name: newSkill ? skillName.trim() : selected, content: text }, ht("技能内容已保存"), () => { setSavedText(text); if (newSkill) { setSelected(skillName.trim()); setNewSkill(false); } })}>{ht("保存")}</ConfigButton></ConfigFooter>
+          {skill?.description && <p className="hermes-skill-description">{skill.description}</p>}<div className="hermes-skill-view-tabs" role="group" aria-label={ht("技能内容视图")}><button type="button" aria-pressed={preview} onClick={()=>setPreview(true)}>{ht("预览")}</button><button type="button" aria-pressed={!preview} onClick={()=>setPreview(false)}>{ht("编辑")}</button></div>
+          {preview ? <div className="hermes-skill-document"><MarkdownBody>{text}</MarkdownBody></div> : <textarea className="hermes-editor" aria-label={ht("SKILL.md 内容")} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />}
+          {(!preview || text !== savedText) && <ConfigFooter status={text !== savedText ? ht("有未保存的修改") : "SKILL.md"}><ConfigButton variant="primary" disabled={saving || loading || !text.trim() || (!newSkill && text === savedText) || (newSkill && !skillName.trim())} onClick={() => void mutate(newSkill ? "/api/skills" : "/api/skills/content", newSkill ? "POST" : "PUT", { name: newSkill ? skillName.trim() : selected, content: text }, ht("技能内容已保存"), () => { setSavedText(text); if (newSkill) { setSelected(skillName.trim()); setNewSkill(false); } })}>{ht("保存")}</ConfigButton></ConfigFooter>}
         </div> : <ConfigEmptyState>{ht("选择一个技能查看、编辑或启停")}</ConfigEmptyState>}
       </ConfigDetail></ConfigSplitView>}
       {page === "config" && <ConfigDetail><div className="hermes-form"><ConfigDetailTitle>{ht("配置文件")}</ConfigDetailTitle><code>{configPath}</code><p>{ht("编辑 Hermes 的 config.yaml；保存前由官方后端验证 YAML。")}</p><textarea className="hermes-editor" aria-label="Config YAML" disabled={loading} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} /><ConfigFooter status={text !== savedText ? ht("有未保存的修改") : ht("已与后端同步")}><ConfigButton disabled={saving || loading || text === savedText} onClick={() => setText(savedText)}>{ht("还原")}</ConfigButton><ConfigButton variant="primary" disabled={saving || loading || text === savedText} onClick={() => void mutate("/api/config/raw", "PUT", { yaml_text: text }, ht("配置已保存"), () => setSavedText(text))}>{ht("保存配置")}</ConfigButton></ConfigFooter></div></ConfigDetail>}

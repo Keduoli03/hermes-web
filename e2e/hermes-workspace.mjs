@@ -14,6 +14,7 @@ const browser = await chromium.launch({ headless: true, ...(process.env.HERMES_T
 const context = await browser.newContext({ viewport: { width: 1365, height: 900 }, reducedMotion: "reduce" });
 await context.addCookies([{ name: "pi_web_session", value: createWebSessionToken(process.env.PI_WEB_PASSWORD), url: origin }]);
 const page = await context.newPage();
+await page.route("**/api/hermes-artifacts*", route => route.fulfill({ json: { sessions: [{ id: "session-1", title: "Contract fixture" }], artifacts: [], failed: 0 } }));
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const terminalRequests=[];
@@ -22,6 +23,7 @@ const legacyAgentRequests = [];
 page.on("request", (req) => { const path = new URL(req.url()).pathname; if (/^\/api\/(agent|sessions|skills|models)(\/|$)/.test(path)) legacyAgentRequests.push(path); });
 await page.route("**/api/cwd/browse**", (route) => route.fulfill({ json: { path: "/workspace", parentPath: "/", directories: [] } }));
 await page.route("**/api/cwd/validate", (route) => route.fulfill({ json: { success: true, cwd: "/workspace", projectRoot: "/workspace", projectKey: "/workspace" } }));
+await page.route("**/api/hermes-session/project", route => route.fulfill({ json: { cwd: "/workspace", branch: "" } }));
 await page.route("**/api/git/status**", (route) => route.fulfill({ json: { isGit: false, files: [], supported: false } }));
 await page.route("**/api/file-index**", (route) => route.fulfill({ json: { files: [], entries: [] } }));
 await page.route("**/api/files/**", async (route) => {
@@ -54,7 +56,7 @@ await page.route("**/api/hermes/**", async (route) => {
   else if (path === "/api/sessions") result = { sessions: [{ id: "session-1", title: "Markdown test", ...sessionFlags, message_count: 2 }] };
   else if (path === "/api/sessions/session-1") {if(method === "PATCH") Object.assign(sessionFlags,body);result={id:"session-1",title:"Markdown test",model:"test-model",message_count:2,input_tokens:1200,output_tokens:300,cache_read_tokens:500,estimated_cost_usd:0.02};}
   else if (path === "/api/sessions/session-1/latest-descendant") result={session_id:"session-1"};
-  else if (path === "/api/sessions/session-1/messages") result = { messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "## Answer\n\n**Hello** from Hermes.\n\n```js\nconst value = 1;\n```", reasoning_content: "Reasoned history content" }] };
+  else if (path === "/api/sessions/session-1/messages") result = { messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "## Answer\n\n**Hello** from Hermes.\n\n```js\nconst value = 1;\n```\n\n```html status.html\n<h1>Artifact preview</h1><script>parent.document.body.dataset.artifactScript='ran'</script>\n```", reasoning_content: "Reasoned history content" }] };
   else if (path === "/v1/runs") result = { run_id: "run-test" };
   else if (path === "/v1/runs/run-test/events") {
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: 'data: {"event":"reasoning.available","text":"Reasoned test content"}\n\ndata: {"event":"message.delta","delta":"A **streamed** answer"}\n\ndata: {"event":"tool.started","tool":"read_file","preview":"README.md"}\n\ndata: {"event":"run.completed","output":"A **streamed** answer"}\n\n' }); return;
@@ -81,13 +83,19 @@ await page.route("**/api/hermes/**", async (route) => {
   else if (path === "/api/profiles/default/soul") { if(method === "PUT") memoryDocuments.soul = body.content; result = {content:memoryDocuments.soul,exists:true}; }
   else if (path === "/api/fs/read-text") result = {text:memoryDocuments[url.searchParams.get("path").endsWith("MEMORY.md") ? "memory" : "user"],truncated:false,binary:false};
   else if (path === "/api/fs/write-text") { memoryDocuments[body.path.endsWith("MEMORY.md") ? "memory" : "user"] = body.content; result={ok:true}; }
-  else if (path === "/api/config/schema") result = { fields: { model: {type:"string",category:"general",description:"Default model"}, "memory.memory_enabled": {type:"boolean",category:"memory"}, "memory.provider": {type:"select",category:"memory",options:["", "scope-recall"]}, "memory.memory_char_limit":{type:"number",category:"memory"} }, category_order:["general","memory"] };
+  else if (path === "/api/config/schema") result = { fields: {
+    model: {type:"string",category:"general",description:"Default model"},
+    "memory.memory_enabled": {type:"boolean",category:"memory"}, "memory.provider": {type:"select",category:"memory",options:["", "scope-recall"]}, "memory.memory_char_limit":{type:"number",category:"memory"},
+    "desktop.repo_scan_enabled": {type:"boolean",category:"desktop"}, "display.show_reasoning": {type:"boolean",category:"display"}, "updates.non_interactive_local_changes": {type:"string",category:"updates"},
+    "terminal.backend": {type:"select",category:"terminal",options:["local","docker","modal"]}, "terminal.docker_image": {type:"string",category:"terminal"}, "terminal.modal_image": {type:"string",category:"terminal"},
+    "voice.auto_tts": {type:"boolean",category:"voice"}, "tts.provider": {type:"select",category:"tts",options:["edge","openai"]}, "tts.edge.voice": {type:"string",category:"tts"}, "tts.openai.model": {type:"string",category:"tts"},
+  }, category_order:["general","memory","terminal","desktop","display","updates","voice","tts"] };
   else if (path === "/api/config") { if(method === "PUT") yaml = `model:\n  default: ${body.config.model ?? "test-model"}\n`; result = { model:"test-model", memory:{memory_enabled:true,provider:"",memory_char_limit:2200} }; }
   else if (path === "/api/model/options") result = {providers:[{slug:"openai-api",name:"OpenAI",key_env:"OPENAI_API_KEY",models:["gpt-test"],total_models:1},{slug:"anthropic",name:"Anthropic",key_env:"ANTHROPIC_API_KEY",models:["claude-test"],total_models:1}]};
   else if (path === "/api/providers/oauth") result = {providers:[{id:"anthropic",name:"Anthropic Account",flow:"external",cli_command:"hermes auth add anthropic"},{id:"openai-codex",name:"ChatGPT Subscription",flow:"device_code"}]};
   else if (path === "/api/providers/oauth/openai-codex/start") result={session_id:"fixture-login",user_code:"TEST-CODE",verification_url:"https://example.com/device"};
   else if (path === "/api/providers/oauth/openai-codex/poll/fixture-login") result={status:"approved"};
-  else if (path === "/api/providers/custom-endpoints/validate") result = { ok:true, reachable:true, models:["discovered-model"] };
+  else if (path === "/api/providers/custom-endpoints/discover") result = body.api_key === "rejected" ? { ok:false, code:"authentication", models:[] } : { ok:true, models:["discovered-model"] };
   else if (path === "/api/providers/custom-endpoints") { if(method === "POST") endpoints = [{ ...body, id:"custom-test", api_key:undefined }]; result = { endpoints, id:"custom-test" }; }
   else if (path === "/api/env") {
     if (method === "PUT") env[body.key] = { is_set: true, redacted_value: "hidden" };
@@ -120,7 +128,8 @@ try {
   // Workspace chrome stays in Pi's original locations, and the native input is compact.
   assert.equal(await page.locator(".hermes-navigation").count(), 0);
   assert.equal(await page.locator(".chat-input-textarea").getAttribute("rows"), "1");
-  await page.getByRole("button", { name: "选择项目目录…", exact: true }).click();
+  await page.getByRole("button", { name: "选择项目文件夹", exact: true }).click();
+  await page.getByRole("button", { name: "浏览文件夹…", exact: true }).click();
   await page.locator(".directory-picker-footer .directory-picker-action").last().click();
   await page.getByRole("complementary", { name: "会话侧栏" }).getByText("README.md", { exact: true }).waitFor();
   await page.getByRole("complementary", { name: "会话侧栏" }).getByText("README.md", { exact: true }).click();
@@ -147,11 +156,31 @@ try {
   await page.getByRole("heading", { name: "Answer" }).waitFor();
   assert.equal(await page.locator("pre").count() > 0, true);
   await page.screenshot({ path: join(out, "chat.png") });
+  const rail=page.getByRole("navigation",{name:"主要导航",exact:true});
+  assert.deepEqual(await rail.getByRole("button").evaluateAll(buttons=>buttons.slice(0,5).map(button=>button.getAttribute("aria-label"))),["首页","技能工具","消息平台","产物","定时任务"]);
+  await rail.getByRole("button",{name:"产物",exact:true}).click();
+  const artifacts=page.getByRole("region",{name:"产物",exact:true});
+  await artifacts.getByRole("button",{name:/^预览 js/}).click();
+  await artifacts.locator(".hermes-artifact-preview pre").getByText("const value = 1;",{exact:true}).waitFor();
+  const artifactDownload=page.waitForEvent("download");await artifacts.getByRole("button",{name:"下载产物",exact:true}).click();assert.ok((await artifactDownload).suggestedFilename().endsWith(".js"));
+  await artifacts.getByRole("button",{name:"关闭预览",exact:true}).click();await artifacts.getByRole("button",{name:"预览 status.html",exact:true}).click();await artifacts.frameLocator('iframe[title="产物预览"]').getByRole("heading",{name:"Artifact preview",exact:true}).waitFor();assert.equal(await artifacts.locator("iframe").getAttribute("sandbox"),"");assert.equal(await page.evaluate(()=>document.body.dataset.artifactScript),undefined);await artifacts.getByRole("button",{name:"查看源码",exact:true}).click();await artifacts.locator(".hermes-artifact-preview pre").getByText(/Artifact preview/).waitFor();await artifacts.getByRole("button",{name:"预览",exact:true}).click();
+  await page.screenshot({path:join(out,"workspace-artifacts.png")});
+  await artifacts.getByRole("button",{name:"关闭预览",exact:true}).click();
+  await artifacts.getByRole("button",{name:"工作区文件",exact:true}).click();
+  await artifacts.locator(".hermes-artifacts-toolbar").getByRole("button",{name:"选择文件夹",exact:true}).click();
+  await page.locator(".directory-picker-footer .directory-picker-action").last().click();
+  await artifacts.getByText("README.md",{exact:true}).click();await artifacts.getByText("Workspace file",{exact:true}).waitFor();
+  await rail.getByRole("button",{name:"定时任务",exact:true}).click();await page.getByRole("button",{name:/每日检查/}).waitFor();
+  await rail.getByRole("button",{name:"技能工具",exact:true}).click();await page.getByRole("button",{name:/project-review/}).waitFor();await page.getByRole("button",{name:/project-review/}).click();await page.getByRole("heading",{name:"Review",exact:true}).waitFor();await page.getByRole("button",{name:"编辑",exact:true}).click();await page.getByRole("textbox",{name:"SKILL.md 内容",exact:true}).fill("# Unsaved navigation draft");
+  page.once("dialog",dialog=>dialog.dismiss());await rail.getByRole("button",{name:"首页",exact:true}).click();assert.equal(await page.getByRole("textbox",{name:"SKILL.md 内容",exact:true}).inputValue(),"# Unsaved navigation draft");
+  page.once("dialog",dialog=>dialog.accept());await rail.getByRole("button",{name:"首页",exact:true}).click();await page.getByRole("heading",{name:"Answer",exact:true}).waitFor();
+  await page.setViewportSize({width:390,height:844});await rail.getByRole("button",{name:"产物",exact:true}).click();await page.screenshot({path:join(out,"mobile-workspace-artifacts.png")});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await rail.getByRole("button",{name:"首页",exact:true}).click();await page.setViewportSize({width:1365,height:900});
   await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
-  await page.getByRole("region",{name:"会话信息",exact:true}).getByText("1,200",{exact:true}).waitFor();
+  await page.getByRole("region",{name:"会话信息",exact:true}).getByText("1.2k",{exact:true}).waitFor();
   await page.locator(".hermes-right-panel-toggle").click();
-  assert.equal(await page.getByRole("region",{name:"会话信息",exact:true}).count(),1);
+  assert.equal(await page.getByRole("region",{name:"会话信息",exact:true}).count(),0);
   await page.locator(".hermes-right-panel-toggle").click();
+  await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
   await page.screenshot({path:join(out,"session-info.png")});
   await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
   await page.getByRole("button",{name:"会话操作 Markdown test",exact:true}).click();
@@ -182,11 +211,14 @@ try {
   await nav("常规");
   const settingsMenu = page.getByRole("navigation", { name: "设置分类", exact: true });
   assert.equal(await settingsMenu.getByRole("button",{name:"持久记忆",exact:true,includeHidden:true}).count(),1);
+  const sectionIconNames = await settingsMenu.locator(".hermes-settings-menu-children > div > button > svg").evaluateAll(nodes => nodes.map(node => node.getAttribute("class")));
+  assert.equal(new Set(sectionIconNames).size, sectionIconNames.length, "Every settings section has a distinct icon");
   await page.getByLabel("语言", {exact:true}).selectOption("en");
   await page.getByRole("heading", {name:"General", exact:true}).waitFor();
   await page.getByLabel("Language", {exact:true}).selectOption("zh-CN");
   await page.getByRole("heading", {name:"常规", exact:true}).waitFor();
   await page.getByRole("textbox", { name: "搜索设置", exact: true }).fill("定时");
+  assert.match(await settingsMenu.locator(".hermes-settings-group-toggle > svg").first().getAttribute("class"), /lucide-activity/);
   assert.deepEqual(await settingsMenu.locator(".hermes-settings-menu-children button").allTextContents(), ["定时任务"]);
   await page.getByRole("textbox", { name: "搜索设置", exact: true }).fill("");
   await page.screenshot({ path: join(out, "settings-general.png") });
@@ -235,7 +267,7 @@ try {
   assert.equal(await page.getByRole("dialog",{name:"Hermes 设置",exact:true}).count(),1);
   await page.getByRole("button",{name:"＋ 添加提供商",exact:true}).click();
   await page.screenshot({path:join(out,"provider-picker.png")});
-  await page.getByRole("textbox",{name:"搜索提供商"}).fill("OpenAI");
+  await page.getByRole("textbox",{name:"搜索提供商",exact:true}).fill("OpenAI");
   await page.getByRole("button",{name:/^OpenAI 1\s*个模型$/,exact:true}).click();
   await page.getByLabel("提供商接口密钥").fill("test-key");
   await page.getByRole("button",{name:"保存密钥",exact:true}).click();
@@ -257,8 +289,13 @@ try {
   await page.getByText("保存后设为默认提供商",{exact:true}).waitFor();
   await page.getByLabel("提供商名称",{exact:true}).fill("Test provider");
   await page.getByLabel("接口地址",{exact:true}).fill("http://127.0.0.1:9999/v1");
+  await page.getByLabel("提供商接口密钥",{exact:true}).fill("rejected");
   await page.getByRole("button",{name:"获取模型",exact:true}).click();
-  await page.getByText("模型列表已获取",{exact:true}).waitFor();
+  await page.locator(".hermes-model-discovery-field").getByRole("alert").getByText("密钥验证失败，请检查密钥和访问权限。",{exact:true}).waitFor();
+  await page.screenshot({path:join(out,"model-discovery-error.png")});
+  await page.getByLabel("提供商接口密钥",{exact:true}).fill("");
+  await page.getByRole("button",{name:"获取模型",exact:true}).click();
+  await page.getByText("已获取 1 个模型",{exact:true}).waitFor();
   await page.getByRole("combobox",{name:"选择模型",exact:true}).selectOption("discovered-model");
   await page.getByRole("button",{name:"保存提供商",exact:true}).click();
   await page.getByText("提供商已保存",{exact:true}).waitFor();
@@ -297,7 +334,36 @@ try {
   await page.getByRole("combobox",{name:"记忆提供方",exact:true}).selectOption("scope-recall");
   await page.getByRole("button",{name:"还原",exact:true}).click();
   await page.screenshot({path:join(out,"memory.png")});
+  await nav("终端与工作区");
+  const backend = page.getByRole("combobox", {name:"执行后端",exact:true});
+  await backend.waitFor();
+  assert.equal(await page.getByLabel("Docker 镜像",{exact:true}).count(),0);
+  await backend.selectOption("docker");
+  await page.getByLabel("Docker 镜像",{exact:true}).fill("fixture-image");
+  assert.equal(await page.getByLabel("Modal 镜像",{exact:true}).count(),0);
+  await backend.selectOption("modal");
+  await page.getByLabel("Modal 镜像",{exact:true}).waitFor();
+  await backend.selectOption("docker");
+  assert.equal(await page.getByLabel("Docker 镜像",{exact:true}).inputValue(),"fixture-image");
+  await page.screenshot({path:join(out,"settings-terminal-conditional.png")});
+  await page.getByRole("button",{name:"还原",exact:true}).click();
+  await nav("语音");
+  const speechProvider = page.getByRole("combobox",{name:"文字转语音提供方",exact:true});
+  await speechProvider.waitFor();
+  assert.equal(await page.getByRole("switch",{name:"朗读回复",exact:true}).count(),0);
+  await speechProvider.selectOption("edge");
+  await page.getByLabel("Edge 语音",{exact:true}).waitFor();
+  assert.equal(await page.getByLabel("OpenAI TTS 模型",{exact:true}).count(),0);
+  await speechProvider.selectOption("openai");
+  await page.getByLabel("OpenAI TTS 模型",{exact:true}).waitFor();
+  assert.equal(await page.getByLabel("Edge 语音",{exact:true}).count(),0);
+  await page.getByRole("button",{name:"还原",exact:true}).click();
   await nav("高级配置"); await ready();
+  await settingsMenu.getByRole("button", {name:"通用",exact:true}).waitFor();
+  assert.deepEqual(await settingsMenu.locator(".hermes-settings-config-categories button").allTextContents(), ["通用"]);
+  await page.getByLabel("搜索配置字段",{exact:true}).fill("desktop");
+  assert.equal(await page.locator(".hermes-config-field").count(),0);
+  await page.getByLabel("搜索配置字段",{exact:true}).fill("");
   const breadcrumb = page.getByRole("navigation",{name:"设置路径",exact:true});
   assert.equal(await breadcrumb.locator("button, summary, select").count(),0);
   await settingsMenu.getByRole("button", {name:"通用",exact:true}).click();
@@ -400,4 +466,5 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(legacyAgentRequests, []);
   console.log("PASS: chat/Markdown/SSE, Cron CRUD/actions, Skills edit/toggle, Config save, Keys save/delete, editable notes/profile/SOUL with conflict protection, status/logs/usage, mobile navigation. Screenshots:", out);
-} finally { await browser.close(); }
+} catch (error) { await page.screenshot({path:join(out,"workspace-failure.png")}); console.error((await page.locator("body").innerText()).slice(-4000)); throw error; }
+finally { await browser.close(); }

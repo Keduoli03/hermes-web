@@ -16,6 +16,11 @@ try {
   const fields = (await schema.json()).fields;
   assert.ok(Object.keys(fields).length > 100);
   await page.goto(origin, { waitUntil: "networkidle" });
+  const rail=page.getByRole("navigation",{name:"主要导航",exact:true});
+  await rail.getByRole("button",{name:"技能工具",exact:true}).click();await page.getByRole("navigation",{name:"技能工具分类",exact:true}).getByRole("button",{name:"MCP 连接",exact:true}).click();await page.getByLabel("搜索 MCP 服务器",{exact:true}).waitFor();assert.equal((await page.request.get(`${origin}/api/hermes/api/mcp/servers`)).status(),200);
+  await rail.getByRole("button",{name:"消息平台",exact:true}).click();await page.getByLabel("搜索消息平台",{exact:true}).waitFor();assert.equal((await page.request.get(`${origin}/api/hermes/api/messaging/platforms`)).status(),200);
+  await rail.getByRole("button",{name:"定时任务",exact:true}).click();await page.getByRole("button",{name:"＋ 新建任务",exact:true}).waitFor();assert.equal((await page.request.get(`${origin}/api/hermes/api/cron/jobs`)).status(),200);
+  await rail.getByRole("button",{name:"首页",exact:true}).click();
   await page.getByRole("navigation", { name: "工作区设置", exact: true }).getByRole("button", { name: "设置", exact: true }).click();
   const nav = page.getByRole("navigation", { name: "设置分类", exact: true });
   async function choose(label) {
@@ -54,6 +59,12 @@ try {
   assert.equal(labels.some(label=>/switch|nofile|ratio|lease|run/i.test(label)),false);
   assert.equal(await page.locator(".hermes-config-field-info p").count(),labels.length);
   await page.screenshot({path:join(out,"live-task-settings.png")});
+  for(const [label,path] of [["技能市场","/api/skills/hub/official"],["消息渠道","/api/messaging/platforms"],["MCP 连接","/api/mcp/servers"]]){
+    await choose(label);
+    const check=await page.request.get(`${origin}/api/hermes${path}`);
+    assert.equal(check.status(),200);
+    assert.equal(await page.locator(".hermes-advanced-module").count(),1);
+  }
   await choose("模型");
   await page.getByRole("button", { name: "＋ 添加提供商", exact: true }).waitFor();
   await page.getByRole("button", { name: "＋ 添加提供商", exact: true }).click();

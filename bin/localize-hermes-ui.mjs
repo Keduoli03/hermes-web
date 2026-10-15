@@ -2,11 +2,10 @@
 import fs from 'node:fs';
 import ts from 'typescript';
 import crypto from 'node:crypto';
-const files = fs.readdirSync('components').filter(name => /^Hermes.*\.tsx$/.test(name));
+const files = [...fs.readdirSync('components').filter(name => /^Hermes.*\.tsx$/.test(name)).map(name => `components/${name}`), 'app/login/page.tsx'];
 const messages = {};
 const id = text => { const key = `hermes.ui.${crypto.createHash('sha256').update(text).digest('hex').slice(0, 12)}`; messages[text] = key; return key; };
-for (const file of files) {
-  const pathname = `components/${file}`;
+for (const pathname of files) {
   const source = fs.readFileSync(pathname, 'utf8');
   const tree = ts.createSourceFile(pathname, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const edits = []; const owners = new Set();
