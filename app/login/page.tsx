@@ -16,7 +16,8 @@ function safeDestination(): string {
 function LoginForm() {
   const { t } = useI18n();
   const { ht } = useHermesI18n();
-  const [status, setStatus] = useState<{enabled: boolean; passwordEnabled: boolean; official: {enabled: boolean; ready: boolean}} | null>(null);
+  const [status, setStatus] = useState<{enabled: boolean; passwordEnabled: boolean; usernameRequired?: boolean; setupRequired?:boolean; official: {enabled: boolean; ready: boolean}} | null>(null);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +32,7 @@ function LoginForm() {
   }, [ht]);
 
   const failureMessage = async (response: Response): Promise<string> => {
-    if (response.status === 401) return t("auth.invalidPassword");
+    if (response.status === 401) return status?.usernameRequired ? ht("账号或密码不正确") : t("auth.invalidPassword");
     if (response.status !== 429) return t("auth.loginFailed");
     const seconds = Number(response.headers.get("retry-after"));
     return t("auth.tooManyAttempts", { seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 1 });
@@ -45,7 +46,7 @@ function LoginForm() {
       const response = await fetch("/api/web-auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, ...(status?.usernameRequired ? { username } : {}) }),
       });
       if (!response.ok) {
         setError(await failureMessage(response));
@@ -70,12 +71,13 @@ function LoginForm() {
           </div>
         </header>
         {!status && <p role="status">{ht("正在读取登录方式…")}</p>}
-        {status && !status.enabled && <div className="web-login-official"><p>{ht("未启用登录验证")}</p><Link href="/">{ht("返回面板")}</Link></div>}
+        {status && !status.enabled && <div className="web-login-official"><p>{ht(status.setupRequired ? "请先在服务器配置管理员账号密码或官方账号登录。" : "未启用登录验证")}</p>{!status.setupRequired && <Link href="/">{ht("返回面板")}</Link>}</div>}
         {status?.official.enabled && <div className="web-login-official">
           {status.official.ready ? <a className="web-login-official-button" href={`/api/web-auth/official/start?next=${encodeURIComponent(typeof window === "undefined" ? "/" : safeDestination())}`}><LogIn size={17} aria-hidden="true" />{ht("使用 Nous 官方账号登录")}<ArrowRight size={16} aria-hidden="true" /></a> : <p role="status">{ht("官方登录配置尚未完成，请联系面板管理员。")}</p>}
         </div>}
         {status?.passwordEnabled && <form className="web-login-form" onSubmit={submit}>
-          {status.official.enabled && <p className="web-login-alternative">{ht("或使用面板密码")}</p>}
+          {status.official.enabled && <p className="web-login-alternative">{ht(status.usernameRequired ? "或使用管理员账号" : "或使用面板密码")}</p>}
+          {status.usernameRequired && <div className="web-login-composer"><label className="web-login-label" htmlFor="web-login-username">{ht("账号")}</label><input id="web-login-username" placeholder={ht("账号")} autoComplete="username" autoFocus required disabled={busy} value={username} onChange={event => setUsername(event.target.value)}/></div>}
           <div className="web-login-composer">
             <label className="web-login-label" htmlFor="web-login-password">{t("auth.password")}</label>
             <input
@@ -85,11 +87,11 @@ function LoginForm() {
               onChange={(event) => setPassword(event.target.value)}
               placeholder={t("auth.password")}
               autoComplete="current-password"
-              autoFocus
+              autoFocus={!status.usernameRequired}
               required
               disabled={busy}
             />
-            <button type="submit" disabled={busy || !password}>
+            <button type="submit" disabled={busy || !password || Boolean(status.usernameRequired && !username)}>
               <ArrowRight size={14} aria-hidden="true" />
               {busy ? t("auth.loggingIn") : t("auth.logIn")}
             </button>

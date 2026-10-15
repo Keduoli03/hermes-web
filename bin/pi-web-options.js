@@ -63,6 +63,7 @@ Environment:
   PI_WEB_NO_OPEN             Set to 1/true/yes/on to disable browser open
   PI_WEB_APP_NAME            PWA manifest name (trimmed; default Pi Web)
   PI_WEB_PASSWORD            Enable browser password login and API Basic Auth
+  PI_WEB_USERNAME            Optional administrator username for password login
   HERMES_WEB_OAUTH_CLIENT_ID  Enable Nous official account login (agent:...)
   HERMES_WEB_PUBLIC_URL       Panel HTTPS origin and registered callback base
   HERMES_WEB_OAUTH_ALLOWED_USERS  Optional comma-separated Portal user IDs

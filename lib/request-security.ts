@@ -65,6 +65,12 @@ function getRequestOrigin(request: Request): string | null {
   return host ? canonicalOrigin(`${requestUrl.protocol}//${host}`) : null;
 }
 
+export function isLoopbackWebRequest(request: Request): boolean {
+  const origin = getRequestOrigin(request);
+  if (!origin) return false;
+  return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname);
+}
+
 function isUserInitiatedSessionExportNavigation(request: Request): boolean {
   if (
     request.method !== "GET"

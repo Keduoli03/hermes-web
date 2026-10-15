@@ -9,7 +9,7 @@ async function execute(request: Request, method: string, params: Record<string, 
       if (!runId || !validProjectSessionId(runId)) return Response.json({ error: "请选择正在运行的项目会话。" }, { status: 400 });
       return Response.json(await queryHermesProjectRun(runId, method, params), { headers: { "Cache-Control": "no-store" } });
     }
-    const client = await connectHermesRpc(projectRpcOptions(request.signal));
+    const client = await connectHermesRpc(await projectRpcOptions(request.signal));
     try { return Response.json(await client.rpc(method, params, 120000), { headers: { "Cache-Control": "no-store" } }); }
     finally { client.close(); }
   } catch (error) { return Response.json({ error: safeProjectError(error, process.env.HERMES_DASHBOARD_SESSION_TOKEN?.trim()) }, { status: 502 }); }

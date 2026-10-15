@@ -1003,5 +1003,16 @@
   "删除订阅 {name}": "Delete subscription {name}",
   "删除此订阅？": "Delete this subscription?",
   "删除版本": "Delete version",
-  "删除此保存版本？": "Delete this saved version?"
+  "删除此保存版本？": "Delete this saved version?",
+  "无法读取管理服务连接状态，请重试。": "Could not load the backend connection status. Try again.",
+  "Hermes 管理服务": "Hermes backend",
+  "正在连接本机管理服务…": "Connecting to the local backend...",
+  "已自动连接本机 Hermes": "Automatically connected to local Hermes",
+  "已连接 Hermes 管理服务": "Connected to the Hermes backend",
+  "管理服务尚未连接": "Backend is disconnected",
+  "正在连接…": "Connecting...",
+  "账号或密码不正确": "Incorrect username or password",
+  "或使用管理员账号": "Or use your administrator account",
+  "账号": "Username",
+  "请先在服务器配置管理员账号密码或官方账号登录。": "Configure an administrator account or official sign-in on the server first."
 }

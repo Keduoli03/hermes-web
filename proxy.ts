@@ -7,6 +7,7 @@ import {
 import {
   isApiRequestAllowed,
   isApiRequestHostAllowed,
+  isLoopbackWebRequest,
 } from "@/lib/request-security";
 import {
   isValidWebSessionToken,
@@ -25,6 +26,15 @@ function tooManyAttempts(retryAfterMs: number): NextResponse {
   });
 }
 
+function browserUrl(path: string, request: NextRequest): URL {
+  const url = new URL(path, request.url);
+  // Host was validated above; keep redirects on the browser's reverse-proxy origin.
+  const host = request.headers.get("host");
+  if (host) { const authority = new URL(`http://${host}`); url.hostname = authority.hostname; url.port = authority.port; }
+  if (request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https") url.protocol = "https:";
+  return url;
+}
+
 export function proxy(request: NextRequest) {
   const oauthCallback = request.nextUrl.pathname === "/api/web-auth/official/callback";
   const isApiRequest = request.nextUrl.pathname === "/api"
@@ -41,7 +51,7 @@ export function proxy(request: NextRequest) {
   }
 
   const password = process.env.PI_WEB_PASSWORD;
-  if (!isWebAuthEnabled(password)) {
+  if (!isWebAuthEnabled(password) && isLoopbackWebRequest(request)) {
     return NextResponse.next();
   }
 
@@ -61,14 +71,14 @@ export function proxy(request: NextRequest) {
   }
   if (request.nextUrl.pathname === "/login") {
     return authenticated
-      ? NextResponse.redirect(new URL("/", request.url))
+      ? NextResponse.redirect(browserUrl("/", request))
       : NextResponse.next();
   }
   if (["/api/web-auth", "/api/web-auth/official/start", "/api/web-auth/official/callback"].includes(request.nextUrl.pathname)) return NextResponse.next();
 
   if (!authenticated) {
     if (!isApiRequest) {
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = browserUrl("/login", request);
       if (request.nextUrl.search) {
         loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
       }

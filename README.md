@@ -34,9 +34,20 @@ node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-
 
 Dashboard `/api/status` 可用于只读状态；管理接口需 Dashboard 鉴权。若 Hermes 未提供适合独立服务的受支持 Dashboard token，管理页面会受限；不要复制运行中进程的秘密或绕过官方认证。
 
-管理接口需要在 `.env.local` 中设置 `HERMES_DASHBOARD_URL` 和 `HERMES_DASHBOARD_SESSION_TOKEN`。官方 Dashboard 默认端口可能随安装配置不同，请填写实际服务地址。API Server 使用 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。配置面板密码时，代理要求有效的登录 cookie；无密码开发仅允许同源的回环地址请求。Dashboard 已连接而 API Server 未配置时，管理功能、历史浏览和项目聊天仍可使用，普通聊天会提示缺少接口配置。跨机器项目使用 `HERMES_PROJECT_PATH_MAP` 的本地挂载目录与远端目录映射：文件浏览、上传、终端使用本地挂载目录，Hermes 会话使用对应远端目录；需先通过系统共享或挂载让两端访问同一份文件，不会自动建立 SSH 或文件同步。
+同机部署时，`HERMES_DASHBOARD_URL` 使用 `http://127.0.0.1:实际端口`，默认端口为 8648。用户登录本网站后，服务端自动获取并验证 Hermes 官方本机握手；无需手动填写 `HERMES_DASHBOARD_SESSION_TOKEN`。令牌只保存在服务端内存，Hermes 重启后会重新握手；设置的“账号与访问”可查看连接状态及重新连接。Dashboard 须作为私有回环服务运行；独立开启公网 OAuth 认证的 Dashboard 不提供该握手。显式令牌仍保留给受支持的远程或手动连接方式。普通聊天继续使用已有 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。
 
-已启动本地 Hermes 桌面服务时，可通过官方回环握手连接（只写入忽略的 `.env.local`，不会输出认证令牌）：
+网站登录可以选择 Nous 官方账号，或配置一个自设管理员账号：
+
+```dotenv
+HERMES_DASHBOARD_URL=http://127.0.0.1:8648
+PI_WEB_USERNAME=admin
+PI_WEB_PASSWORD=替换为你自己的强密码
+PI_WEB_ALLOWED_HOSTS=你的域名
+```
+
+只设置密码时仍保留原密码登录；官方登录按上述独立客户端配置启用。对外访问必须有一种登录方式，未配置时展示安装提示，不开放后台管理。跨机器项目使用 `HERMES_PROJECT_PATH_MAP` 的本地挂载目录与远端目录映射；系统共享或挂载需由管理员提前建立。
+
+同机自动连接不再需要执行额外脚本。旧的手动连接脚本仍可用于诊断（只写入忽略的 `.env.local`，不会输出认证令牌）：
 
 ```bash
 node bin/connect-hermes-local.mjs http://127.0.0.1:实际端口

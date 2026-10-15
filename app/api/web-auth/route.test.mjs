@@ -4,20 +4,57 @@ import { createJiti } from "jiti";
 import { NextRequest } from "next/server.js";
 
 const originalPassword = process.env.PI_WEB_PASSWORD;
+const originalUsername = process.env.PI_WEB_USERNAME;
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },
   interopDefault: true,
   moduleCache: false,
 });
 const { GET, POST, DELETE } = await jiti.import("./route.ts");
+const { proxy } = await jiti.import("../../../proxy.ts");
 const { recordAuthSuccess } = await import("../../../lib/auth-throttle.ts");
 
 before(() => { process.env.PI_WEB_PASSWORD = "correct horse battery staple"; });
-beforeEach(() => { recordAuthSuccess(); });
+beforeEach(() => { delete process.env.PI_WEB_USERNAME; recordAuthSuccess(); });
 after(() => {
   recordAuthSuccess();
   if (originalPassword === undefined) delete process.env.PI_WEB_PASSWORD;
   else process.env.PI_WEB_PASSWORD = originalPassword;
+  if (originalUsername === undefined) delete process.env.PI_WEB_USERNAME; else process.env.PI_WEB_USERNAME = originalUsername;
+});
+
+test("configured admin username is required and never disclosed before login", async () => {
+  process.env.PI_WEB_USERNAME = "site-admin";
+  const initial = await (await GET(request("GET"))).json();
+  assert.equal(initial.usernameRequired, true);
+  assert.equal(JSON.stringify(initial).includes("site-admin"), false);
+  assert.equal((await POST(request("POST", { username: "wrong", password: "correct horse battery staple" }))).status, 401);
+  recordAuthSuccess();
+  assert.equal((await POST(request("POST", { password: "correct horse battery staple" }))).status, 401);
+  recordAuthSuccess();
+  const response = await POST(request("POST", { username: "site-admin", password: "correct horse battery staple" }));
+  assert.equal(response.status, 200);
+  const cookie = response.headers.get("set-cookie").split(";")[0];
+  assert.equal((await (await GET(request("GET", undefined, { Cookie: cookie }))).json()).authenticated, true);
+  process.env.PI_WEB_USERNAME = "another-admin";
+  assert.equal((await (await GET(request("GET", undefined, { Cookie: cookie }))).json()).authenticated, false);
+});
+
+test("public reverse-proxy requests require login setup even with an internal loopback URL", async () => {
+  const password=process.env.PI_WEB_PASSWORD,hosts=process.env.PI_WEB_ALLOWED_HOSTS,oauth=process.env.HERMES_WEB_OAUTH_CLIENT_ID;
+  try {
+    process.env.PI_WEB_PASSWORD=""; process.env.PI_WEB_ALLOWED_HOSTS="panel.test"; delete process.env.HERMES_WEB_OAUTH_CLIENT_ID;
+    const headers={Host:"panel.test",Origin:"https://panel.test","x-forwarded-proto":"https","sec-fetch-site":"same-origin"};
+    const page=new NextRequest("http://127.0.0.1:30141/",{headers});
+    assert.equal(proxy(page).headers.get("location"),"https://panel.test/login");
+    assert.equal(proxy(new NextRequest("http://127.0.0.1:30141/api/hermes/api/config",{headers})).status,401);
+    const status=await (await GET(new NextRequest("http://127.0.0.1:30141/api/web-auth",{headers}))).json();
+    assert.equal(status.authenticated,false); assert.equal(status.setupRequired,true);
+  } finally {
+    process.env.PI_WEB_PASSWORD=password;
+    if(hosts===undefined)delete process.env.PI_WEB_ALLOWED_HOSTS;else process.env.PI_WEB_ALLOWED_HOSTS=hosts;
+    if(oauth===undefined)delete process.env.HERMES_WEB_OAUTH_CLIENT_ID;else process.env.HERMES_WEB_OAUTH_CLIENT_ID=oauth;
+  }
 });
 
 function request(method, body, headers = {}) {

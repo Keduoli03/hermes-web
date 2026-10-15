@@ -1,3 +1,5 @@
+import { cachedHermesToken, fetchConnectedHermes } from "./hermes-connection.mjs";
+
 export function isSafeHermesApiSegment(segment: string): boolean {
   return Boolean(segment) && segment !== "." && segment !== ".." && /^[\p{L}\p{M}\p{N}_ .:{}@()+-]+$/u.test(segment);
 }
@@ -38,11 +40,7 @@ export function getHermesDashboardHeaders(token = process.env.HERMES_DASHBOARD_S
 }
 
 export function getHermesProfileSessionToken(profile?: string | null): string {
-  const normalized = profile?.trim();
-  const safeProfile = normalized?.replace(/[^A-Za-z0-9_]/g, "_");
-  const suffix = safeProfile && safeProfile !== "default" ? `_${safeProfile}` : "";
-  const profileToken = suffix ? process.env[`HERMES_DASHBOARD_SESSION_TOKEN${suffix}`] : undefined;
-  return profileToken?.trim() || process.env.HERMES_DASHBOARD_SESSION_TOKEN?.trim() || "";
+  return cachedHermesToken(profile ?? undefined);
 }
 
 export async function fetchHermesDashboard(path: string, options: {
@@ -54,13 +52,13 @@ export async function fetchHermesDashboard(path: string, options: {
   profile?: string | null;
 } = {}): Promise<Response> {
   const url = buildHermesDashboardUrl(path, options.query ?? "");
-  const token = getHermesProfileSessionToken(options.profile);
-  const headers = getHermesDashboardHeaders(token);
+  const headers = new Headers({ Accept: "application/json" });
   new Headers(options.headers).forEach((value, key) => headers.set(key, value));
   if (options.body !== undefined && options.body !== null && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  return fetch(url, {
+  return fetchConnectedHermes(new URL(url).pathname + new URL(url).search, {
+    profile: options.profile ?? undefined,
     method: options.method ?? "GET",
     headers,
     body: options.body,

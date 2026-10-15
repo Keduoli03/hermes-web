@@ -1,4 +1,5 @@
 {
+  "无法读取管理服务连接状态，请重试。": "hermes.ui.a7c296a86f1a",
   "无法读取登录配置，请刷新重试。": "hermes.ui.20d2aea3bf7e",
   "退出失败，请重试。": "hermes.ui.30cfd17a6b8f",
   "账号与访问": "hermes.ui.7e404bb792ab",
@@ -9,6 +10,13 @@
   "官方登录配置尚未完成，请联系面板管理员。": "hermes.ui.c790524ab06d",
   "正在退出…": "hermes.ui.0ae60dd37b14",
   "退出登录": "hermes.ui.3ab8cc15939f",
+  "Hermes 管理服务": "hermes.ui.e01aa88b4ba5",
+  "正在连接本机管理服务…": "hermes.ui.275a24df244a",
+  "已自动连接本机 Hermes": "hermes.ui.22b831da5b65",
+  "已连接 Hermes 管理服务": "hermes.ui.e8dcfd864bfa",
+  "管理服务尚未连接": "hermes.ui.572fd925ec4e",
+  "正在连接…": "hermes.ui.8be0ea36a9bb",
+  "重新连接": "hermes.ui.68891ab35cab",
   "首页": "hermes.ui.203c08e0d44a",
   "技能工具": "hermes.ui.63cca3e834bb",
   "消息平台": "hermes.ui.4d0f2811ade0",
@@ -688,7 +696,6 @@
   "暂时无法加载": "hermes.ui.46fc6f3e978b",
   "正在读取服务数据，请稍候。": "hermes.ui.65fa615a339a",
   "请确认 Hermes 管理服务正在运行，然后重试。": "hermes.ui.44d53588a3d0",
-  "重新连接": "hermes.ui.68891ab35cab",
   "查看原因": "hermes.ui.856cba05337d",
   "调整右侧面板宽度": "hermes.ui.b3ba856a7197",
   "右侧面板": "hermes.ui.2a226f868764",
@@ -895,8 +902,12 @@
   "已安装技能": "hermes.ui.cd388ddf180b",
   "内置工具": "hermes.ui.70a988a36d38",
   "官方登录未完成，请重试并确认账号有权访问此面板。": "hermes.ui.11265081eb1e",
+  "账号或密码不正确": "hermes.ui.2e61b8d74d36",
   "登录后访问你的 Hermes 面板。": "hermes.ui.25306ce88af2",
+  "请先在服务器配置管理员账号密码或官方账号登录。": "hermes.ui.fb1a9e5ade78",
   "返回面板": "hermes.ui.90fe4917d3c5",
   "使用 Nous 官方账号登录": "hermes.ui.4bb946784ed0",
-  "或使用面板密码": "hermes.ui.27fd4f94e30d"
+  "或使用管理员账号": "hermes.ui.c697c756f66b",
+  "或使用面板密码": "hermes.ui.27fd4f94e30d",
+  "账号": "hermes.ui.311bb313fdec"
 }

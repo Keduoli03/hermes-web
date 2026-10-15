@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { projectRequestDenied } from "@/lib/hermes-project-request";
-import { fetchHermesDashboard, getHermesProfileSessionToken } from "@/lib/hermes-dashboard-client";
+import { fetchHermesDashboard } from "@/lib/hermes-dashboard-client";
+import { configuredHermesToken } from "@/lib/hermes-connection.mjs";
 import { loadArtifactSessions, loadSessionArtifacts, type HermesArtifact } from "@/lib/hermes-artifacts";
 import { indexedSessionArtifacts } from "@/lib/hermes-artifact-index";
 
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
   if (denied) return denied;
   const headers = { "Cache-Control": "no-store" };
   try {
-    const namespace = createHash("sha256").update(JSON.stringify([process.env.HERMES_DASHBOARD_URL ?? "http://127.0.0.1:8648", getHermesProfileSessionToken()])).digest("hex");
+    const namespace = createHash("sha256").update(JSON.stringify([process.env.HERMES_DASHBOARD_URL ?? "http://127.0.0.1:8648", configuredHermesToken()])).digest("hex");
     const load = async (path: string) => {
       const url = new URL(path, "http://hermes.local");
       const response = await fetchHermesDashboard(decodeURIComponent(url.pathname), { query: url.search.slice(1), signal: AbortSignal.timeout(60_000) });

@@ -5,7 +5,7 @@ import {
   recordAuthSuccess,
   retryAfterSeconds,
 } from "@/lib/auth-throttle";
-import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { hasJsonContentType, isApiRequestAllowed, isLoopbackWebRequest } from "@/lib/request-security";
 import {
   createWebSessionToken,
   isValidBasicAuthorization,
@@ -13,6 +13,8 @@ import {
   isValidWebSessionToken,
   isWebPasswordEnabled,
   isWebAuthEnabled,
+  isWebUsernameRequired,
+  isValidWebUsername,
   PI_WEB_SESSION_COOKIE,
   PI_WEB_SESSION_MAX_AGE,
 } from "@/lib/web-auth";
@@ -58,11 +60,11 @@ export async function GET(request: NextRequest) {
 
   const password = process.env.PI_WEB_PASSWORD;
   const enabled = isWebAuthEnabled(password);
-  const authenticated = !enabled
+  const authenticated = !enabled && isLoopbackWebRequest(request)
     || isValidBasicAuthorization(request.headers.get("authorization"), password)
     || isValidWebSessionToken(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value, password);
   return NextResponse.json(
-    { enabled, authenticated, passwordEnabled: isWebPasswordEnabled(password), official: officialLoginStatus(), ...(authenticated ? { account: officialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value)?.userId ?? null } : {}) },
+    { enabled, authenticated, passwordEnabled: isWebPasswordEnabled(password), ...(!enabled && !isLoopbackWebRequest(request) ? { setupRequired: true } : {}), ...(isWebUsernameRequired() ? { usernameRequired: true } : {}), official: officialLoginStatus(), ...(authenticated ? { account: officialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value)?.userId ?? null } : {}) },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -85,8 +87,8 @@ export async function POST(request: NextRequest) {
     return tooManyAttempts(retryAfterMs);
   }
 
-  const body = await request.json().catch(() => null) as { password?: unknown } | null;
-  if (!body || typeof body.password !== "string" || !isValidWebPassword(body.password, password)) {
+  const body = await request.json().catch(() => null) as { password?: unknown; username?: unknown } | null;
+  if (!body || typeof body.password !== "string" || !isValidWebPassword(body.password, password) || !isValidWebUsername(body.username)) {
     const delayMs = recordAuthFailure();
     console.warn(`[web-auth] Password authentication failed; next attempt blocked for ${delayMs}ms`);
     return NextResponse.json(

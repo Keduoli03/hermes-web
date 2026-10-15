@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { projectRequestDenied, validProjectSessionId } from "@/lib/hermes-project-request";
-import { fetchHermesDashboard, getHermesProfileSessionToken } from "@/lib/hermes-dashboard-client";
+import { fetchHermesDashboard } from "@/lib/hermes-dashboard-client";
+import { configuredHermesToken } from "@/lib/hermes-connection.mjs";
 import { loadSessionArtifacts, type ArtifactSession } from "@/lib/hermes-artifacts";
 import { artifactVersionKey, listArtifactVersions, readArtifactVersion, saveArtifactVersion, deleteArtifactVersion } from "@/lib/hermes-artifact-versions";
 
@@ -16,7 +17,7 @@ async function selectedArtifact(sessionId: string | null, artifactId: string | n
   const session = await load(`/api/sessions/${encodeURIComponent(sessionId)}`) as ArtifactSession;
   const artifact = (await loadSessionArtifacts({ ...session, id: sessionId }, load)).find(item => item.id === artifactId);
   if (!artifact) throw new Error("产物已不存在或无法访问。");
-  const namespace = createHash("sha256").update(JSON.stringify([process.env.HERMES_DASHBOARD_URL, getHermesProfileSessionToken()])).digest("hex");
+  const namespace = createHash("sha256").update(JSON.stringify([process.env.HERMES_DASHBOARD_URL, configuredHermesToken()])).digest("hex");
   return { artifact, key: artifactVersionKey(namespace, artifact) };
 }
 export async function GET(request: Request) {

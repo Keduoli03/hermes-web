@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     if (modelError) return Response.json({ error: modelError }, { status: 400 });
     const cwd = await validateProjectDirectory(body.cwd);
     const lifetime = new AbortController();
-    const stream = await prepareHermesProjectChat({ ...body, cwd: toHermesProjectPath(cwd), text: mapHermesProjectReferences(body.text, cwd) }, projectRpcOptions(lifetime.signal));
+    const stream = await prepareHermesProjectChat({ ...body, cwd: toHermesProjectPath(cwd), text: mapHermesProjectReferences(body.text, cwd) }, await projectRpcOptions(lifetime.signal));
     const runId = await retainHermesRun(stream, { cwd });
     grantProjectDirectory(cwd);
     return new Response(attachHermesRun(runId, 0, request.signal), { headers });

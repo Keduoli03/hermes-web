@@ -18,10 +18,15 @@ server-to-server Dashboard token/API key.
    PI_WEB_ALLOWED_HOSTS=your-domain
    ```
 
-3. Configure the existing `HERMES_DASHBOARD_URL`,
-   `HERMES_DASHBOARD_SESSION_TOKEN`, and, when used, API Server URL/key.
-   These credentials remain on the server. Keep the Dashboard and API Server
-   private; exposing them separately would bypass this panel's login.
+3. For a same-machine installation, use the private Dashboard address
+   `HERMES_DASHBOARD_URL=http://127.0.0.1:8648` (replace the port if needed).
+   No Dashboard token is required: after this panel authenticates a request,
+   its server obtains the official loopback SPA handshake, verifies it and
+   keeps the credential only in memory. A stale credential refreshes after a
+   401 or failed initial WebSocket handshake. The Dashboard must be running
+   in its private loopback mode; a separately gated public Dashboard does
+   not expose this handshake. Explicit tokens remain available for supported
+   remote/manual installations. API Server URL/key are separate server settings.
 4. Run the panel behind HTTPS, preserving the original `Host` header. Restart
    the panel after changing environment variables. The registered callback,
    public URL and actual browser hostname must agree. Root-origin deployments
@@ -46,6 +51,13 @@ Set `PI_WEB_PASSWORD` as well to retain password login as an independent backup.
 Leaving it blank makes official login the sole method. A nonempty OAuth client
 ID engages authentication on loopback too; invalid/incomplete configuration
 fails closed and the password backup remains available if configured.
+
+To use a custom administrator account, set both `PI_WEB_USERNAME` and
+`PI_WEB_PASSWORD` on the server. The login page then requires both fields;
+leaving the username unset preserves password-only login. This is an operator
+account for the shared Hermes installation, not an open registration service
+or isolated per-user Hermes instances. General settings shows backend connection
+state and provides Reconnect without asking the user to handle a backend token.
 
 For local verification only, HTTP is accepted for `localhost`, `127.0.0.1` and
 `[::1]`. Register that exact local callback separately. A browser on another

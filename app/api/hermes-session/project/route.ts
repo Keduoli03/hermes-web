@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (!body || typeof body !== "object") return Response.json({ error: "项目参数无效。" }, { status: 400 });
     if (body.session_id !== undefined && !validProjectSessionId(body.session_id)) return Response.json({ error: "会话 ID 无效。" }, { status: 400 });
     const cwd = await validateProjectDirectory(body.cwd);
-    const result = await bindHermesProject({ session_id: body.session_id, cwd: toHermesProjectPath(cwd) }, projectRpcOptions(request.signal));
+    const result = await bindHermesProject({ session_id: body.session_id, cwd: toHermesProjectPath(cwd) }, await projectRpcOptions(request.signal));
     const confirmed = await validateProjectDirectory(fromHermesProjectPath(result.cwd));
     if (process.platform === "win32" ? confirmed.toLowerCase() !== cwd.toLowerCase() : confirmed !== cwd) throw new Error("Hermes 返回了不同的文件夹，请检查管理服务是否运行在本机。");
     grantProjectDirectory(confirmed);
