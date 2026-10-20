@@ -49,7 +49,7 @@ try {
   assert.equal(await list.getByLabel("搜索技能", { exact: true }).count(), 1);
   assert.equal(await page.locator(".hermes-skills .hermes-management-toolbar").count(), 0);
   const rail = page.getByRole("navigation", { name: "主要导航" });
-  assert.equal(await rail.getByRole("button").last().getAttribute("aria-label"), "配置档案");
+  assert.equal(await rail.getByRole("button").last().getAttribute("aria-label"), "账户与配置");
   assert.equal(await list.locator(".hermes-skill-select").first().getAttribute("aria-label"), "a-long-skill-name-for-responsive-layout-and-wrapping");
   assert.equal(await list.getByLabel("已使用 101 次", { exact: true }).textContent(), "×101");
   assert.equal(await list.getByLabel("暂无使用统计", { exact: true }).textContent(), "—");
@@ -87,11 +87,13 @@ try {
     const toggle = row.querySelector(".config-switch").getBoundingClientRect();
     return name.right <= usage.left && usage.right <= toggle.left && toggle.right <= row.getBoundingClientRect().right;
   })), true);
+  await rail.getByRole("button", { name: "账户与配置", exact: true }).click();
   page.once("dialog", dialog => dialog.dismiss());
-  await rail.getByRole("button", { name: "配置档案", exact: true }).click();
+  await page.getByRole("menuitem", { name: "管理配置方案", exact: true }).click();
   assert.equal(await page.getByRole("dialog", { name: "Hermes 设置", exact: true }).count(), 0);
+  await rail.getByRole("button", { name: "账户与配置", exact: true }).click();
   page.once("dialog", dialog => dialog.accept());
-  await rail.getByRole("button", { name: "配置档案", exact: true }).click();
+  await page.getByRole("menuitem", { name: "管理配置方案", exact: true }).click();
   await page.getByRole("dialog", { name: "Hermes 设置", exact: true }).waitFor();
   assert.equal(await page.getByRole("navigation", { name: "设置分类" }).getByRole("button", { name: "配置档案", exact: true }).count(), 0);
   await page.getByRole("button", { name: "新建配置档案", exact: true }).waitFor();

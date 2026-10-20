@@ -50,6 +50,8 @@ const nextConfig: NextConfig = {
     "node-pty",
     "undici",
     "web-push",
+    // Let Node resolve ws's optional native accelerators instead of bundling stubs.
+    "ws",
     "@earendil-works/pi-coding-agent",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",

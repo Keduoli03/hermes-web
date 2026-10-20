@@ -1,0 +1,4 @@
+# Compatibility for existing builds that bundled ws's optional native helpers.
+[Service]
+Environment=WS_NO_BUFFER_UTIL=1
+Environment=WS_NO_UTF_8_VALIDATE=1

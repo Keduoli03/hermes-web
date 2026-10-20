@@ -1,5 +1,8 @@
 # Sessions, branching and live events
 
+## Hermes tool transcripts
+- `hermesChatMessages()` pairs OpenAI `tool_calls` and native `toolCall` blocks with tool results before filtering text-only rows. Both paged history and full history use it. `HermesToolMessage` adapts results to Pi's original tool-call card, which defaults to collapsed and remembers manual expansion by session-scoped call id. Do not render tool output as a custom message: custom message bodies intentionally default to expanded. The live tool-activity group follows the tool-details preference instead of forcing itself open while busy.
+
 ## AgentSession lifecycle (`lib/rpc-manager.ts`)
 - One `AgentSessionWrapper` per session id in `globalThis.__piSessions` (`globalThis` survives Next.js hot reload; a module-level Map does not). Concurrent `startRpcSession()` calls share one start Promise (`globalThis.__piStartLocks`). Idle timeout: 10 minutes (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables).
 - Stop cannot cancel a run awaiting a promise that ignores the abort signal (a third-party extension handler or tool): `inner.abort()` never returns. So Stop (`abort`, `abort_bash`) sets `forceShutdownOnIdle` and arms the idle timer, shutting the wrapper down one idle timeout after the first Stop even while it runs. Later commands (a reload's `get_tools`, Stop again) must not push that deadline back; with `PI_WEB_IDLE_TIMEOUT_MS=0` it still arms, at 10 minutes.

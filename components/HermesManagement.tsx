@@ -3,11 +3,12 @@
 import { useHermesI18n } from "@/hooks/useHermesI18n";
 
 import { useEffect, useState } from "react";
+import { ArrowLeft, CircleAlert, Clock3, FolderCog, History, Pause, Pencil, Play, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
 import { hermesDate, hermesLabel, hermesSchedule, hermesValue } from "@/lib/hermes-display";
 import { hermesJson } from "@/lib/hermes-client";
 import { MarkdownBody } from "./MarkdownBody";
 import { HermesSkillList, skillCategory, skillSource, type HermesSkill } from "./HermesSkillList";
-import { ConfigButton, ConfigDetail, ConfigDetailHeader, ConfigDetailTitle, ConfigEmptyState, ConfigField, ConfigFooter, ConfigNotice, ConfigPanelShell, ConfigSidebar, ConfigSidebarItem, ConfigSidebarList, ConfigSplitView, ConfigSwitch } from "./SettingsUi";
+import { ConfigButton, ConfigDetail, ConfigDetailActions, ConfigDetailHeader, ConfigDetailHeaderInfo, ConfigDetailTitle, ConfigEmptyState, ConfigField, ConfigFooter, ConfigNotice, ConfigPanelShell, ConfigSidebar, ConfigSidebarItem, ConfigSidebarList, ConfigSplitView, ConfigSwitch } from "./SettingsUi";
 
 export type HermesPage = "chat" | "status" | "cron" | "skills" | "config" | "keys" | "logs" | "usage" | "tools";
 export const hermesPages: { id: HermesPage; label: string; icon: string }[] = [
@@ -54,6 +55,7 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
   const [jobDraft, setJobDraft] = useState(initialJob);
   const [editingJob, setEditingJob] = useState<string | null>(null);
   const [showJobForm, setShowJobForm] = useState(false);
+  const [cronDetailOpen, setCronDetailOpen] = useState(false);
   const [newSkill, setNewSkill] = useState(false);
   const [skillName, setSkillName] = useState("");
   const [preview, setPreview] = useState(false);
@@ -114,14 +116,19 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
   const job = jobs.find((j) => j.id === selected);
   const skill = skills.find((s) => s.name === selected);
   const matches = (value: string) => value.toLowerCase().includes(filter.toLowerCase());
+  const visibleJobs = jobs.filter(item => matches(`${item.name ?? ""} ${item.prompt ?? ""} ${item.profile ?? ""} ${scheduleText(item)}`));
+  const canSaveJob = !saving && Boolean(jobDraft.schedule.trim() && (jobDraft.prompt.trim() || jobDraft.skills.trim() || jobDraft.script.trim()) && (!jobDraft.no_agent || jobDraft.script.trim()));
+  const jobStatus = (value?: string) => value === "delivery_failed" ? ht("投递失败") : ht(hermesValue(value));
   function editJob(item?: Job) {
-    setEditingJob(item?.id ?? null); setShowJobForm(true);
+    if (saving || showJobForm && !window.confirm(ht("放弃未保存的修改？"))) return;
+    setEditingJob(item?.id ?? null); setShowJobForm(true);setCronDetailOpen(true);
     setJobDraft(item ? { name: item.name ?? "", schedule: scheduleInput(item), prompt: item.prompt ?? "", deliver: item.deliver ?? "local", model: item.model ?? "", provider: item.provider ?? "", skills: item.skills?.join(", ") ?? "", script: item.script ?? "", workdir: item.workdir ?? "", no_agent: item.no_agent ?? false } : initialJob);
   }
   function saveJob() {
+    if (!canSaveJob) return;
     const payload = { ...jobDraft, skills: jobDraft.skills.split(",").map((s) => s.trim()).filter(Boolean), model: jobDraft.model || null, provider: jobDraft.provider || null, script: jobDraft.script || null, workdir: jobDraft.workdir || null };
     const existing = jobs.find((j) => j.id === editingJob);
-    void mutate(existing ? jobPath(existing) : "/api/cron/jobs", existing ? "PUT" : "POST", existing ? { updates: payload } : payload, "定时任务已保存", () => setShowJobForm(false));
+    void mutate(existing ? jobPath(existing) : "/api/cron/jobs", existing ? "PUT" : "POST", existing ? { updates: payload } : payload, "定时任务已保存", () => {setShowJobForm(false);if(!existing)setCronDetailOpen(false);});
   }
   function createSkill() {
     if (text !== savedText && !window.confirm(ht("放弃未保存的技能内容？"))) return;
@@ -130,10 +137,9 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
   }
 
   return <ConfigPanelShell embedded title={hermesPages.find((p) => p.id === page)?.label ?? page} onClose={() => {}}>
-    <div className={`hermes-management${page === "skills" ? " hermes-skills" : ""}`}>
-      {page !== "skills" && <div className="hermes-management-toolbar">
+    <div className={`hermes-management${page === "skills" ? " hermes-skills" : page === "cron" ? ` hermes-cron${cronDetailOpen ? " is-cron-detail-open" : ""}` : ""}`}>
+      {page !== "skills" && page !== "cron" && <div className="hermes-management-toolbar">
         {["cron", "keys", "logs"].includes(page) && <input aria-label={ht("筛选")} placeholder={page === "keys" ? ht("搜索提供商或变量…") : ht("筛选…")} value={filter} onChange={(e) => setFilter(e.target.value)} />}
-        {page === "cron" && <ConfigButton onClick={() => editJob()}>{ht("＋ 新建任务")}</ConfigButton>}
         {page === "logs" && <select aria-label={ht("日志文件")} value={logFile} onChange={(e) => setLogFile(e.target.value)}><option value="agent">{ht("助手日志")}</option><option value="gateway">{ht("网关日志")}</option><option value="errors">{ht("错误日志")}</option></select>}
         {page === "usage" && <select aria-label={ht("统计天数")} value={days} onChange={(e) => setDays(e.target.value)}><option value="7">{ht("7 天")}</option><option value="30">{ht("30 天")}</option><option value="90">{ht("90 天")}</option></select>}
         <ConfigButton disabled={loading || saving || (page === "config" && text !== savedText)} onClick={() => setRevision((n) => n + 1)}>{ht("刷新")}</ConfigButton>
@@ -141,20 +147,56 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
       {error && <div role="alert"><ConfigNotice>{error}</ConfigNotice></div>}
       {notice && <div role="status"><ConfigNotice>{notice}</ConfigNotice></div>}
       {loading && <ConfigNotice>{ht("正在读取 Hermes…")}</ConfigNotice>}
-      {page === "cron" && <ConfigSplitView><ConfigSidebar><ConfigSidebarList>
-        {jobs.filter((j) => matches(`${j.name} ${j.prompt}`)).map((j) => <ConfigSidebarItem key={j.id} active={selected === j.id} onClick={() => { setSelected(j.id); setShowJobForm(false); setRuns(null); setDeleteTarget(null); }}><span>{j.paused ? "Ⅱ" : "◷"} {j.name || j.id}</span><small>{scheduleText(j)}</small></ConfigSidebarItem>)}
-        {!loading && !jobs.length && <ConfigEmptyState>{ht("暂无定时任务")}</ConfigEmptyState>}
+      {page === "cron" && <ConfigSplitView><ConfigSidebar>
+        <div className="hermes-cron-list-toolbar">
+          <label className="hermes-cron-search"><Search size={15} aria-hidden="true"/><input aria-label={ht("筛选")} placeholder={ht("搜索任务…")} value={filter} onChange={event=>setFilter(event.target.value)}/></label>
+          <ConfigButton className="hermes-cron-icon-button" title={ht("新建任务")} aria-label={ht("新建任务")} disabled={loading || saving} onClick={()=>editJob()}><Plus size={16} aria-hidden="true"/></ConfigButton>
+          <ConfigButton className="hermes-cron-icon-button" title={ht("刷新")} aria-label={ht("刷新")} disabled={loading || saving || showJobForm} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={15} aria-hidden="true"/></ConfigButton>
+        </div>
+        <div className="hermes-cron-list-count">{ht("任务列表")}<span>{visibleJobs.length} / {jobs.length}</span></div>
+        <ConfigSidebarList>
+        {visibleJobs.map(item=><ConfigSidebarItem key={item.id} className="hermes-cron-task" title={item.name || item.id} disabled={saving} active={showJobForm ? editingJob===item.id : selected===item.id} onClick={()=>{
+          if(showJobForm && !window.confirm(ht("放弃未保存的修改？")))return;
+          setSelected(item.id);setShowJobForm(false);setCronDetailOpen(true);setRuns(null);setDeleteTarget(null);
+        }}>
+          {item.paused ? <Pause size={16} aria-hidden="true"/> : <Clock3 size={16} aria-hidden="true"/>}
+          <span className="hermes-cron-task-info"><span className="hermes-cron-task-name">{item.name || item.id}</span><code title={scheduleText(item)}>{scheduleText(item)}</code><span className="hermes-cron-task-meta"><span className="hermes-cron-state" data-paused={Boolean(item.paused)}>{ht(item.paused ? "已暂停" : "已启用")}</span><span title={item.profile ?? "default"}>{hermesValue(item.profile ?? "default")}</span></span></span>
+        </ConfigSidebarItem>)}
+        {!loading && !visibleJobs.length && <ConfigEmptyState>{ht(jobs.length ? "没有匹配的任务" : "暂无定时任务")}</ConfigEmptyState>}
       </ConfigSidebarList></ConfigSidebar><ConfigDetail>
-        {showJobForm ? <div className="hermes-form"><ConfigDetailTitle>{editingJob ? ht("编辑任务") : ht("新建任务")}</ConfigDetailTitle>
-          {([ ["name", ht("名称")], ["schedule", ht("执行计划")], ["deliver", ht("结果投递（本地 / 平台）")], ["model", ht("模型（留空使用默认）")], ["provider", ht("提供商")], ["skills", ht("技能（逗号分隔）")], ["script", ht("脚本（脚本目录内）")], ["workdir", ht("工作目录")] ] as const).map(([key, label]) => <ConfigField key={key} label={label}><input aria-label={label} value={jobDraft[key]} onChange={(e) => setJobDraft({ ...jobDraft, [key]: e.target.value })} /></ConfigField>)}
-          <ConfigField label={ht("任务提示词")}><textarea aria-label={ht("任务提示词")} rows={7} value={jobDraft.prompt} onChange={(e) => setJobDraft({ ...jobDraft, prompt: e.target.value })} /></ConfigField>
-          <ConfigField label={ht("仅执行脚本")}><ConfigSwitch checked={jobDraft.no_agent} label={ht("仅执行脚本")} onChange={(no_agent) => setJobDraft({ ...jobDraft, no_agent })} /></ConfigField>
-          <ConfigFooter><ConfigButton disabled={saving} onClick={() => setShowJobForm(false)}>{ht("取消")}</ConfigButton><ConfigButton variant="primary" disabled={saving || !jobDraft.schedule.trim() || (!jobDraft.prompt.trim() && !jobDraft.skills.trim() && !jobDraft.script.trim()) || (jobDraft.no_agent && !jobDraft.script.trim())} onClick={saveJob}>{ht("保存任务")}</ConfigButton></ConfigFooter>
-        </div> : job ? <div className="hermes-form"><ConfigDetailTitle>{job.name || job.id}</ConfigDetailTitle><p>{scheduleText(job)} · {job.paused ? ht("已暂停") : ht("已启用")} · {hermesValue(job.profile ?? "default")}</p><p>{ht("下次运行：")}{hermesDate(job.next_run_at)}　{ht("最近状态：")}{hermesValue(job.last_status)}</p><MarkdownBody>{job.prompt ?? ""}</MarkdownBody>
-          <div className="hermes-actions"><ConfigButton disabled={saving} onClick={() => editJob(job)}>{ht("编辑")}</ConfigButton><ConfigButton disabled={saving} onClick={() => void mutate(jobPath(job, job.paused ? "/resume" : "/pause"), "POST", undefined, job.paused ? ht("已恢复") : ht("已暂停"))}>{job.paused ? ht("恢复") : ht("暂停")}</ConfigButton><ConfigButton disabled={saving} onClick={() => void mutate(jobPath(job, "/trigger"), "POST", undefined, ht("已请求运行"))}>{ht("立即运行")}</ConfigButton><ConfigButton disabled={saving} onClick={() => { setSaving(true); setError(""); void hermesJson(jobPath(job, "/runs")).then(setRuns).catch((e: Error) => setError(e.message)).finally(() => setSaving(false)); }}>{ht("运行记录")}</ConfigButton><ConfigButton variant="danger" disabled={saving} onClick={() => setDeleteTarget(job.id)}>{ht("删除")}</ConfigButton></div>
-          {deleteTarget === job.id && <ConfigNotice>{ht("删除任务「")}{job.name || job.id}」？ <ConfigButton onClick={() => setDeleteTarget(null)}>{ht("取消")}</ConfigButton> <ConfigButton variant="danger" disabled={saving} onClick={() => void mutate(jobPath(job), "DELETE", undefined, ht("已删除任务"), () => setSelected(""))}>{ht("确认删除")}</ConfigButton></ConfigNotice>}
+        {showJobForm ? <form className="hermes-cron-editor" aria-label={ht(editingJob ? "编辑任务" : "新建任务")} onSubmit={event=>{event.preventDefault();saveJob();}}>
+          <header className="hermes-cron-editor-header"><button type="button" className="hermes-cron-back" onClick={()=>setCronDetailOpen(false)}><ArrowLeft size={15} aria-hidden="true"/>{ht("返回任务列表")}</button><h2>{ht(editingJob ? "编辑任务" : "新建任务")}</h2>{editingJob && <p>{jobs.find(item=>item.id===editingJob)?.name || editingJob}</p>}</header>
+          <fieldset><legend>{ht("基本信息")}</legend><div className="hermes-cron-form-grid">
+            {([ ["name", ht("名称")], ["schedule", ht("执行计划")], ["deliver", ht("结果投递（本地 / 平台）")] ] as const).map(([key,label])=><ConfigField key={key} label={label}><input aria-label={label} value={jobDraft[key]} disabled={saving} onChange={event=>setJobDraft({...jobDraft,[key]:event.target.value})}/></ConfigField>)}
+          </div></fieldset>
+          <ConfigField label={ht("任务提示词")}><textarea aria-label={ht("任务提示词")} rows={10} disabled={saving} value={jobDraft.prompt} onChange={event=>setJobDraft({...jobDraft,prompt:event.target.value})}/></ConfigField>
+          <details className="hermes-cron-advanced"><summary>{ht("高级选项")}</summary><div className="hermes-cron-form-grid">
+            {([ ["model", ht("模型（留空使用默认）")], ["provider", ht("提供商")], ["skills", ht("技能（逗号分隔）")], ["script", ht("脚本（脚本目录内）")], ["workdir", ht("工作目录")] ] as const).map(([key,label])=><ConfigField key={key} label={label}><input aria-label={label} disabled={saving} value={jobDraft[key]} onChange={event=>setJobDraft({...jobDraft,[key]:event.target.value})}/></ConfigField>)}
+            <ConfigField label={ht("仅执行脚本")}><ConfigSwitch checked={jobDraft.no_agent} disabled={saving} label={ht("仅执行脚本")} onChange={no_agent=>setJobDraft({...jobDraft,no_agent})}/></ConfigField>
+          </div></details>
+          <ConfigFooter><ConfigButton disabled={saving} onClick={()=>{setShowJobForm(false);if(!editingJob)setCronDetailOpen(false);}}>{ht("取消")}</ConfigButton><ConfigButton type="submit" variant="primary" disabled={!canSaveJob}><Save size={15} aria-hidden="true"/>{ht("保存任务")}</ConfigButton></ConfigFooter>
+        </form> : job ? <article className="hermes-cron-detail" aria-label={ht("任务详情")}>
+          <header className="hermes-cron-detail-header">
+            <button type="button" className="hermes-cron-back" onClick={()=>setCronDetailOpen(false)}><ArrowLeft size={15} aria-hidden="true"/>{ht("返回任务列表")}</button>
+            <ConfigDetailHeader className="hermes-detail-heading is-top-aligned">
+              <ConfigDetailHeaderInfo><div><h2>{job.name || job.id}</h2><div className="hermes-cron-heading-meta"><span className="hermes-cron-state" data-paused={Boolean(job.paused)}>{ht(job.paused ? "已暂停" : "已启用")}</span><span><FolderCog size={14} aria-hidden="true"/>{hermesValue(job.profile ?? "default")}</span>{job.no_agent && <span>{ht("仅执行脚本")}</span>}</div></div></ConfigDetailHeaderInfo>
+              <ConfigDetailActions><ConfigButton variant="primary" disabled={saving} onClick={()=>editJob(job)}><Pencil size={14} aria-hidden="true"/>{ht("编辑")}</ConfigButton></ConfigDetailActions>
+            </ConfigDetailHeader>
+            <div className="hermes-detail-toolbar hermes-cron-actions">
+              <ConfigButton className="hermes-detail-danger" variant="danger" disabled={saving} onClick={()=>setDeleteTarget(job.id)}><Trash2 size={14} aria-hidden="true"/>{ht("删除")}</ConfigButton>
+              <ConfigDetailActions>
+                <ConfigButton disabled={saving} onClick={()=>void mutate(jobPath(job,job.paused?"/resume":"/pause"),"POST",undefined,job.paused?ht("已恢复"):ht("已暂停"))}>{job.paused ? <Play size={14} aria-hidden="true"/> : <Pause size={14} aria-hidden="true"/>}{ht(job.paused?"恢复":"暂停")}</ConfigButton>
+                <ConfigButton disabled={saving} onClick={()=>void mutate(jobPath(job,"/trigger"),"POST",undefined,ht("已请求运行"))}><Play size={14} aria-hidden="true"/>{ht("立即运行")}</ConfigButton>
+                <ConfigButton disabled={saving} onClick={()=>{setSaving(true);setError("");void hermesJson(jobPath(job,"/runs")).then(setRuns).catch((e:Error)=>setError(e.message)).finally(()=>setSaving(false));}}><History size={14} aria-hidden="true"/>{ht("运行记录")}</ConfigButton>
+              </ConfigDetailActions>
+            </div>
+          </header>
+          <dl className="hermes-cron-summary"><div><dt>{ht("执行计划")}</dt><dd><code>{scheduleText(job)}</code></dd></div><div><dt>{ht("下次运行")}</dt><dd>{hermesDate(job.next_run_at)}</dd></div><div><dt>{ht("最近状态")}</dt><dd className="hermes-cron-result" data-error={/fail|error/.test(job.last_status ?? "")} title={job.last_status}>{/fail|error/.test(job.last_status ?? "") && <CircleAlert size={14} aria-hidden="true"/>}{jobStatus(job.last_status)}</dd></div></dl>
+          <section className="hermes-cron-prompt"><h3>{ht("任务提示词")}</h3><div className="hermes-cron-document">{job.prompt ? <MarkdownBody>{job.prompt}</MarkdownBody> : <p>{ht("未设置任务提示词")}</p>}</div></section>
+          <details className="hermes-cron-advanced"><summary>{ht("执行配置")}</summary><dl className="hermes-cron-config">{[[ht("结果投递（本地 / 平台）"),hermesValue(job.deliver || "local")],[ht("模型"),job.model || ht("跟随默认")],[ht("提供商"),job.provider || ht("跟随默认")],[ht("工作目录"),job.workdir || ht("跟随默认")],...(job.skills?.length ? [[ht("技能"),job.skills.join(", ")]] : []),...(job.script ? [[ht("脚本（脚本目录内）"),job.script]] : [])].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>
+          {deleteTarget === job.id && <ConfigNotice>{ht("删除任务「")}{job.name || job.id}」？ <ConfigButton onClick={() => setDeleteTarget(null)}>{ht("取消")}</ConfigButton> <ConfigButton variant="danger" disabled={saving} onClick={() => void mutate(jobPath(job), "DELETE", undefined, ht("已删除任务"), () => {setSelected("");setCronDetailOpen(false);})}>{ht("确认删除")}</ConfigButton></ConfigNotice>}
           {runs !== null && <RunHistory data={runs} />}
-        </div> : <ConfigEmptyState>{ht("选择一个任务，或新建定时任务")}</ConfigEmptyState>}
+        </article> : <ConfigEmptyState>{ht("选择一个任务，或新建定时任务")}</ConfigEmptyState>}
       </ConfigDetail></ConfigSplitView>}
       {page === "skills" && <ConfigSplitView><HermesSkillList skills={skills} query={filter} selected={selected} busy={saving} loading={loading} onQueryChange={setFilter} onCreate={createSkill} onRefresh={()=>setRevision(n=>n+1)} onSelect={s=>{if(text !== savedText && !window.confirm(ht("放弃未保存的技能内容？")))return;setSelected(s.name);setNewSkill(false);setPreview(true);}} onToggle={(s,enabled)=>void mutate("/api/skills/toggle","PUT",{name:s.name,enabled},enabled ? ht("技能已启用") : ht("技能已禁用"))}/><ConfigDetail>
         {selected || newSkill ? <div className="hermes-form"><ConfigDetailHeader><ConfigDetailTitle>{newSkill ? ht("新建技能") : selected}</ConfigDetailTitle></ConfigDetailHeader>

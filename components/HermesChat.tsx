@@ -18,6 +18,8 @@ import { PencilIcon } from "./SidebarIcons";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import type { AgentMessage } from "@/lib/types";
 import { MessageView } from "./MessageView";
+import { HermesToolMessage } from "./HermesToolMessage";
+import { hermesChatMessages, type HermesChatMessage } from "@/lib/hermes-chat-messages";
 import { I18nProvider } from "@/hooks/useI18n";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { useHermesFontSizes } from "@/hooks/useHermesFontSizes";
@@ -32,7 +34,7 @@ import { HermesClarify, type ClarifyRequest } from "./HermesClarify";
 
 type HermesSession = HermesSessionRow;
 type ThinkingLevel = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-type ChatMessage = { role: "user" | "assistant" | "tool"; text: string; reasoning?: string; images?: { data: string; mimeType: string }[] };
+type ChatMessage = HermesChatMessage;
 type RunEvent = { event?: string; run_id?: string; session_id?: string; delta?: string; text?: string; reasoning?: string; tools?: string[]; clarify?: ClarifyRequest | null; request_id?: string; output?: string; status?: string; tool?: string; preview?: string; error?: string; approval?: { request_id?: string; command?: string; description?: string; choices?: string[] } };
 
 const revealRenderedHistory = () => {};
@@ -42,28 +44,6 @@ async function projectRequest<T>(action: "project" | "chat", body: unknown, sign
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Hermes 项目操作失败。");
   return result as T;
-}
-
-function textFromMessage(item: Record<string, unknown>): string {
-  const content = item.content ?? item.text;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map((part) => {
-    if (typeof part === "string") return part;
-    if (part && typeof part === "object") {
-      const p = part as Record<string, unknown>;
-      if (typeof p.text === "string") return p.text;
-      if (p.type === "image") return "[图片]";
-      if (p.type === "toolCall") return `工具调用：${String(p.toolName ?? "tool")}\n${JSON.stringify(p.input ?? {})}`;
-    }
-    return "";
-  }).filter(Boolean).join("\n");
-  return "";
-}
-
-function reasoningFromMessage(item: Record<string, unknown>): string {
-  if (typeof item.reasoning_content === "string") return item.reasoning_content;
-  if (Array.isArray(item.content)) return item.content.filter(part => part && typeof part === "object" && part.type === "thinking").map(part => String(part.thinking ?? "")).join("\n");
-  return "";
 }
 
 export function HermesChat() {
@@ -251,7 +231,7 @@ function HermesWorkspace() {
         hermesJson<HermesSessionDetail>(`/api/sessions/${encodeURIComponent(id)}`, { signal: controller.signal }),
       ]);
       const body = await response.json() as { messages?: Record<string, unknown>[] };
-      const rows = (body.messages ?? []).filter((row) => ["user", "assistant", "tool", "toolResult"].includes(String(row.role))).map((row) => ({ role: row.role === "user" ? "user" as const : row.role === "tool" || row.role === "toolResult" ? "tool" as const : "assistant" as const, text: textFromMessage(row), reasoning: reasoningFromMessage(row) })).filter((m) => m.text);
+      const rows = hermesChatMessages(body.messages ?? []);
       if (controller.signal.aborted) return;
       setMessages(rows);
       historyLoaded = true;
@@ -467,7 +447,7 @@ function HermesWorkspace() {
         rows.push(...pageRows);
         if (pageRows.length < 500) break;
       }
-      if (!controller.signal.aborted) setMessages(rows.filter((row) => ["user", "assistant", "tool", "toolResult"].includes(String(row.role))).map((row) => ({ role: row.role === "user" ? "user" : row.role === "assistant" ? "assistant" : "tool", text: textFromMessage(row), reasoning: reasoningFromMessage(row) })));
+      if (!controller.signal.aborted) setMessages(hermesChatMessages(rows));
     } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e)); }
     finally { if (!controller.signal.aborted) setLoading(false); }
   };
@@ -499,8 +479,11 @@ function HermesWorkspace() {
       <div className={`hermes-chat ${!messages.length ? "is-empty" : ""}`} dir={display.direction} style={{"--hermes-user-transparency":`${display.bubbleTransparency}%`} as CSSProperties}>
         <div className="hermes-transcript" dir="ltr">
         <div className="hermes-messages" dir={display.direction} ref={scrollRef} onScroll={event=>{const el=event.currentTarget;followTailRef.current=el.scrollHeight-el.scrollTop-el.clientHeight<48;}}>
-          {loading ? <div className="hermes-muted">{ht("正在读取 Hermes 会话…")}</div> : <div className="hermes-message-list">{messages.map((m, i) => <div ref={element=>{const index=minimapRefIndexes[i];if(index!==null)messageRefs.current[index]=element;}} key={`${i}-${m.role}`} className={m.role === "user" ? "hermes-user-row" : "hermes-assistant-row"}>{display.showReasoning && m.reasoning && <details className="hermes-reasoning" open={!display.collapseReasoning}><summary>{ht("推理过程")}</summary><MarkdownBody>{m.reasoning}</MarkdownBody></details>}<MessageView message={m.role === "user" ? { role: "user", content: m.images?.length ? [{ type: "text", text: m.text }, ...m.images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.mimeType, data: image.data } }))] : m.text } : m.role === "tool" ? { role: "custom", customType: "hermes-tool", display: true, content: m.text } : { role: "assistant", content: [{ type: "text", text: m.text || (busy ? ht("思考中…") : "") }], model: modelName, provider: "hermes" }} isStreaming={busy && i === messages.length - 1} onOpenFile={openFile} cwd={cwd ?? undefined} /></div>)}</div>}
-          {tools.length > 0 && <details className="hermes-tool-activity" open={busy}><summary>{ht("工具活动 ·")}{tools.length}</summary>{tools.map((tool, i) => <pre key={i}>{display.toolDetails ? tool : tool.split("：")[0]}</pre>)}</details>}
+          {loading ? <div className="hermes-muted">{ht("正在读取 Hermes 会话…")}</div> : <div className="hermes-message-list">{messages.map((m, i) => <div ref={element=>{const index=minimapRefIndexes[i];if(index!==null)messageRefs.current[index]=element;}} key={`${i}-${m.role}`} className={m.role === "user" ? "hermes-user-row" : "hermes-assistant-row"}>
+            {display.showReasoning && m.reasoning && <details className="hermes-reasoning" open={!display.collapseReasoning}><summary>{ht("推理过程")}</summary><MarkdownBody>{m.reasoning}</MarkdownBody></details>}
+            {m.role === "tool" ? <HermesToolMessage key={`${selected ?? activeDraftId}:${m.tool?.id ?? i}`} message={m} scope={selected ?? activeDraftId ?? "new"} onOpenFile={openFile} cwd={cwd ?? undefined} /> : <MessageView message={m.role === "user" ? { role: "user", content: m.images?.length ? [{ type: "text", text: m.text }, ...m.images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.mimeType, data: image.data } }))] : m.text } : { role: "assistant", content: [{ type: "text", text: m.text || (busy ? ht("思考中…") : "") }], model: modelName, provider: "hermes" }} isStreaming={busy && i === messages.length - 1} onOpenFile={openFile} cwd={cwd ?? undefined} />}
+          </div>)}</div>}
+          {tools.length > 0 && <details className="hermes-tool-activity" open={display.toolDetails}><summary>{ht("工具活动 ·")}{tools.length}</summary>{tools.map((tool, i) => <pre key={i}>{display.toolDetails ? tool : tool.split("：")[0]}</pre>)}</details>}
           {approval && <div className="hermes-approval"><strong>{ht("Hermes 需要你的确认")}</strong><pre>{approval.command || ht("即将执行一项受保护的操作。")}</pre><div><button onClick={() => void respondApproval("deny")}>{ht("拒绝")}</button><button onClick={() => void respondApproval("once")}>{ht("允许一次")}</button></div></div>}
           {clarify && <HermesClarify key={clarify.request_id} request={clarify} onAnswer={async answers => { await projectRequest("chat", { action: "clarify", run_id: activeRunIdRef.current, request_id: clarify.request_id, answers }); setClarify(null); }} />}
           {compactNotice && <div className="hermes-compact-notice" role="status">{compactNotice}</div>}{error && <div className="hermes-error" role="alert">{error}</div>}

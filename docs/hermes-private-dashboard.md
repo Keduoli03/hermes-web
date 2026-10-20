@@ -30,9 +30,16 @@ HERMES_DASHBOARD_PUBLIC_URL=http://127.0.0.1:8649 \
   hermes dashboard --host 127.0.0.1 --port 8649 --isolated --no-open
 ```
 
-The process-local public URL override prevents the private instance from inheriting
-the public instance's OAuth gate. `--isolated` keeps this instance independent of
-the existing Dashboard. Do not use `--insecure`, change the public service's auth,
+Verify the effective public URL after startup: some Hermes CLI versions reload
+`HERMES_HOME/.env` and replace the process-local override with the stored value.
+An external `HERMES_DASHBOARD_PUBLIC_URL` there can therefore keep the private
+instance behind OAuth. When retiring the public Dashboard, update its stored
+public URL to the private loopback origin too, using Hermes' environment writer.
+If the public Dashboard must remain active, use per-instance configuration
+supported by the installed Hermes version; do not change its shared auth settings.
+
+`--isolated` keeps this instance independent of the existing Dashboard. Do not use
+`--insecure`, change the public service's auth,
 or expose the private port through a firewall, reverse proxy or tunnel. Do not
 start an additional messaging gateway just to connect this panel.
 
@@ -119,3 +126,16 @@ Protocol references: official Hermes `hermes_cli/web_server.py`,
 `hermes_cli/web_server_chat.py`, and `website/docs/user-guide/features/web-dashboard.md`.
 Confirm the installed Hermes version before deploying; this repository's tests
 use deterministic backend fixtures and do not verify the deployment host.
+
+## Production WebSocket Dependencies
+
+Keep `ws` in `serverExternalPackages` so Node loads its optional native helpers
+normally. Bundling those helpers can produce a stub and fail while masking an
+outgoing frame (`mask is not a function`), leaving project RPCs waiting until
+their timeout even though the connection opened.
+
+For an existing affected build, install the systemd drop-in from
+`deploy/systemd/hermes-web-websocket.conf.example` on the Hermes Web service,
+reload systemd and restart that service. It disables the optional accelerators
+and uses the supported JavaScript implementation without rebuilding the live
+application. Verify a project-folder RPC and an actual streamed reply afterward.

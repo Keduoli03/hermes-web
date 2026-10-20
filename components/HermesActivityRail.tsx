@@ -1,7 +1,8 @@
 "use client";
 
-import { Home, Wrench, MessagesSquare, PanelsTopLeft, Clock3, Settings2, UserRound } from "lucide-react";
+import { Home, Wrench, MessagesSquare, PanelsTopLeft, Clock3, Settings2 } from "lucide-react";
 import { useHermesI18n } from "@/hooks/useHermesI18n";
+import { HermesAccountMenu } from "./HermesAccountMenu";
 
 export type HermesWorkspaceView = "home" | "tools" | "channels" | "artifacts" | "cron";
 export const workspaceViews: {id:HermesWorkspaceView;label:string;icon:typeof Home}[] = [
@@ -18,6 +19,6 @@ export function HermesActivityRail({view,inert,onNavigate,onSettings,onProfiles}
     <div className="hermes-rail-brand" aria-hidden="true">H</div>
     {workspaceViews.map(({id,label,icon:Icon})=><button key={id} type="button" aria-label={ht(label)} aria-current={view===id ? "page":undefined} onClick={()=>onNavigate(id)}><Icon size={21} strokeWidth={1.7}/><span className="hermes-rail-tooltip">{ht(label)}</span></button>)}
     <button type="button" className="hermes-rail-settings" aria-label={ht("偏好与设置")} onClick={onSettings}><Settings2 size={21} strokeWidth={1.7}/><span className="hermes-rail-tooltip">{ht("设置")}</span></button>
-    <button type="button" className="hermes-rail-profiles" aria-label={ht("配置档案")} onClick={onProfiles}><UserRound size={21} strokeWidth={1.7}/><span className="hermes-rail-tooltip">{ht("配置档案")}</span></button>
+    <HermesAccountMenu inert={inert} onManageProfiles={onProfiles}/>
   </nav>;
 }

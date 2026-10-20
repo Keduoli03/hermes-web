@@ -1190,6 +1190,7 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
       <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
         <button
           onClick={toggleExpanded}
+          aria-expanded={expanded}
           style={{
             display: "flex",
             alignItems: "center",

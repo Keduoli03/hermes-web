@@ -237,7 +237,7 @@ try {
   await page.getByRole("button", { name: "立即运行" }).click(); await page.getByText("已请求运行").waitFor();
   await page.getByRole("button", { name: "运行记录" }).click(); await page.getByText("检查完成，没有发现问题。", { exact: true }).waitFor();
   await page.screenshot({ path: join(out, "cron.png") });
-  await page.getByRole("button", { name: "＋ 新建任务" }).click();
+  await page.getByRole("button", { name: "新建任务", exact:true }).click();
   await page.getByLabel("名称", { exact: true }).fill("New task");
   await page.getByLabel("任务提示词").fill("Inspect the workspace");
   await page.getByRole("button", { name: "保存任务", exact: true }).click(); await ready();

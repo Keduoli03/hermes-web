@@ -1,5 +1,7 @@
 # Pi Web - Development Notes
 
+For Hermes UI changes, read [DESIGN.md](DESIGN.md) first. It defines the shared layout, action placement, controls, responsive behavior, and visual verification rules.
+
 ## Quick Start
 
 ```bash
