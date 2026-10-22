@@ -1,20 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import {
-  getAuthRetryAfterMs,
-  recordAuthFailure,
-  retryAfterSeconds,
-} from "@/lib/auth-throttle";
+import { retryAfterSeconds } from "@/lib/auth-throttle";
 import {
   isApiRequestAllowed,
   isApiRequestHostAllowed,
-  isLocalWebDevelopment,
 } from "@/lib/request-security";
-import {
-  isValidWebSessionToken,
-  isValidBasicAuthorization,
-  isWebAuthEnabled,
-  PI_WEB_SESSION_COOKIE,
-} from "@/lib/web-auth";
+import { authenticateWebRequest } from "@/lib/web-request-auth.mjs";
 
 function tooManyAttempts(retryAfterMs: number): NextResponse {
   return new NextResponse("Too many failed attempts", {
@@ -50,25 +40,9 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
-  const password = process.env.PI_WEB_PASSWORD;
-  if (!isWebAuthEnabled(password) && isLocalWebDevelopment(request)) {
-    return NextResponse.next();
-  }
-
-  let authenticated = isValidWebSessionToken(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value, password);
-  const authorization = isApiRequest ? request.headers.get("authorization") : null;
-  if (!authenticated && authorization && /^Basic\s/i.test(authorization)) {
-    // Every Basic header is a password guess, so it shares the login form's
-    // throttle; otherwise any API path (or GET /api/web-auth) answers guesses
-    // at full speed. While blocked even the right password is refused, or the
-    // answer would leak. A success does not reset the counter: Basic clients
-    // authenticate on every request, and each reset would hand an interleaved
-    // guesser a fresh short block.
-    const retryAfterMs = getAuthRetryAfterMs();
-    if (retryAfterMs > 0) return tooManyAttempts(retryAfterMs);
-    authenticated = isValidBasicAuthorization(authorization, password);
-    if (!authenticated) recordAuthFailure();
-  }
+  const { authenticated, retryAfterMs, method } = authenticateWebRequest(request, isApiRequest);
+  if (retryAfterMs > 0) return tooManyAttempts(retryAfterMs);
+  if (method === "development") return NextResponse.next();
   if (request.nextUrl.pathname === "/login") {
     return authenticated
       ? NextResponse.redirect(browserUrl("/", request))

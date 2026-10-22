@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { HERMES_APP_NAME, HERMES_ICON_32, HERMES_ICON_192, HERMES_APPLE_ICON } from "@/lib/hermes-brand.mjs";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./settings.css";
@@ -9,28 +10,31 @@ import "./sidebar.css";
 import "./sidebar-menu.css";
 import "./hermes.css";
 
-const notoSansMono = Noto_Sans_Mono({
-  subsets: ["latin", "cyrillic"],
+const notoSansMono = localFont({
+  src: "../public/fonts/NotoSansMono-variable.ttf",
+  weight: "100 900",
+  style: "normal",
   variable: "--font-noto-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Hermes Workspace",
+  title: HERMES_APP_NAME,
   description: "Hermes Agent workspace",
-  applicationName: "Hermes Workspace",
+  applicationName: HERMES_APP_NAME,
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
+      { url: HERMES_ICON_32, sizes: "32x32", type: "image/png" },
       {
-        url: "/icons/icon-192.png",
+        url: HERMES_ICON_192,
         sizes: "192x192",
         type: "image/png",
       },
     ],
     apple: [
       {
-        url: "/icons/apple-touch-icon.png",
+        url: HERMES_APPLE_ICON,
         sizes: "180x180",
         type: "image/png",
       },
@@ -39,7 +43,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Pi Web",
+    title: HERMES_APP_NAME,
   },
   formatDetection: {
     telephone: false,

@@ -1,14 +1,15 @@
 import type { MetadataRoute } from "next";
+import { HERMES_APP_NAME, HERMES_ICON_192, HERMES_ICON_512 } from "../lib/hermes-brand.mjs";
 
 export const dynamic = "force-dynamic";
 
 export default function manifest(): MetadataRoute.Manifest {
-  const appName = process.env.PI_WEB_APP_NAME?.trim() || "Pi Web";
+  const appName = process.env.PI_WEB_APP_NAME?.trim() || HERMES_APP_NAME;
   return {
     id: "/",
     name: appName,
     short_name: appName,
-    description: "Local web interface for the pi coding agent",
+    description: "Hermes Agent workspace",
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -18,13 +19,13 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "en",
     icons: [
       {
-        src: "/icons/icon-192.png",
+        src: HERMES_ICON_192,
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icons/icon-512.png",
+        src: HERMES_ICON_512,
         sizes: "512x512",
         type: "image/png",
         purpose: "any",

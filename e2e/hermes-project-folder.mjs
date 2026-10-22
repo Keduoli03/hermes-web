@@ -15,7 +15,7 @@ await context.addInitScript(() => localStorage.setItem("hermes-recent-projects",
 const page = await context.newPage();
 const errors = [], projectRequests = [], chatRequests = [], apiRuns = [];
 page.on("pageerror", error => errors.push(error.message));
-let failProject = false, releaseProject, releaseChat;
+let failProject = false, failAfterStart = false, releaseProject, releaseChat;
 let projectGate = Promise.resolve(), chatGate = Promise.resolve();
 await page.route("**/api/hermes-session/project", async route => {
   const body = route.request().postDataJSON(); projectRequests.push(body);
@@ -25,6 +25,10 @@ await page.route("**/api/hermes-session/project", async route => {
 await page.route("**/api/hermes-session/chat", async route => {
   const body = route.request().postDataJSON(); chatRequests.push(body);
   await chatGate;
+  if (failAfterStart) {
+    await route.fulfill({ contentType: "text/event-stream", body: 'data: {"event":"run.started","run_id":"native-failed-run","session_id":"project-session"}\n\ndata: {"event":"run.failed","error":"Fixture accepted run failed"}\n\n' });
+    return;
+  }
   await route.fulfill({ contentType: "text/event-stream", body: 'data: {"event":"run.started","run_id":"native-run","session_id":"project-session"}\n\ndata: {"event":"message.delta","delta":"Project answer"}\n\ndata: {"event":"run.completed","output":"Project answer"}\n\n' });
 });
 await page.route("**/api/cwd/browse**", route => route.fulfill({ json: { path: "/projects/Alpha", parentPath: "/projects", directories: [] } }));
@@ -95,11 +99,18 @@ try {
   await page.getByText("Project answer", { exact: true }).waitFor();
   assert.equal(chatRequests.at(-1).provider, "custom:api");
   assert.equal(chatRequests.at(-1).session_id, "project-session");
+  failAfterStart = true;
+  await textarea.fill("Accepted before first delta"); await textarea.press("Enter");
+  await page.getByText("Fixture accepted run failed", { exact: true }).waitFor();
+  assert.equal(await textarea.inputValue(), "", "an accepted run must not be restored as an unsent prompt");
+  assert.equal(await page.getByText("Accepted before first delta", { exact: true }).count(), 1);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem("hermes-active-run")), null);
+  failAfterStart = false;
   await page.getByRole("navigation", { name: "会话", exact: true }).getByRole("button", { name: /^Unavailable project \d/ }).click();
   await page.getByText("此会话的项目文件夹无法访问，请重新选择文件夹。", { exact: true }).waitFor();
   await textarea.fill("Do not use previous project"); await textarea.press("Enter");
   await page.waitForFunction(() => document.querySelector(".chat-input-textarea").value === "Do not use previous project");
-  assert.equal(chatRequests.length, 2); assert.equal(apiRuns.length, 1);
+  assert.equal(chatRequests.length, 3); assert.equal(apiRuns.length, 1);
   failProject = false;
   await page.getByRole("button", { name: "新建对话", exact: true }).click();
   await page.locator(".directory-picker-footer .directory-picker-action").last().click();

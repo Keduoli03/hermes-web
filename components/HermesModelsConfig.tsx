@@ -3,21 +3,21 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, ChevronDown, CircleAlert, CircleCheck, Plus } from "lucide-react";
 import { hermesJson } from "@/lib/hermes-client";
+import { hermesModelOptionsPath, hermesEndpointModels, type HermesModelEndpoint as Endpoint, type HermesCatalogProvider, type HermesModelOptions } from "@/lib/hermes-model-catalog";
 import { useHermesI18n } from "@/hooks/useHermesI18n";
-import { HermesProviderPicker, type HermesProvider, type HermesOAuthProvider, type ProviderChoice } from "./HermesProviderPicker";
+import { HermesProviderPicker, type HermesOAuthProvider, type ProviderChoice } from "./HermesProviderPicker";
 import { HermesBuiltinProviderConfig } from "./HermesBuiltinProviderConfig";
 import { HermesModelCards, type HermesModelCard } from "./HermesModelCards";
 import { ConfigButton, ConfigDetail, ConfigDetailHeader, ConfigDetailHeaderInfo, ConfigDetailTitle, ConfigField, ConfigFooter, ConfigNotice, ConfigSplitView, ConfigSwitch } from "./SettingsUi";
 
-type Endpoint = { id: string; name: string; base_url: string; model: string; models?: string[]; api_mode?: string; context_length?: number | null; discover_models?: boolean; is_current?: boolean; has_api_key?: boolean; model_details?: { id: string; canonical_model?: string; reasoning_effort?: string }[] };
 type Draft = { id: string; name: string; base_url: string; model: string; api_key: string; api_mode: string; context_length: string; models: string[]; discover_models: boolean; make_default: boolean; model_details?: Endpoint["model_details"] };
 const empty: Draft = { id: "", name: "", base_url: "", model: "", api_key: "", api_mode: "", context_length: "", models: [], discover_models: true, make_default: false };
 const endpointPath = (id: string) => `/api/providers/custom-endpoints/${encodeURIComponent(id)}`;
 
-export function HermesModelsConfig({ model, modelProvider, onModelChange, modelBusy, onDirtyChange }: { models: string[]; model: string; modelProvider?: string; onModelChange: (model: string, provider?: string) => void; modelBusy: boolean; onDirtyChange: (dirty: boolean) => void }) {
+export function HermesModelsConfig({ model, modelProvider, onModelChange, modelBusy, onDirtyChange }: { models: string[]; model: string; modelProvider?: string; onModelChange: (model: string, provider?: string, asDefault?: boolean) => void; modelBusy: boolean; onDirtyChange: (dirty: boolean) => void }) {
   const { ht } = useHermesI18n();
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
-  const [providers, setProviders] = useState<(HermesProvider & { api_url?: string; is_current?: boolean })[]>([]);
+  const [providers, setProviders] = useState<HermesCatalogProvider[]>([]);
   const [oauth, setOAuth] = useState<HermesOAuthProvider[]>([]);
   const [defaultModel, setDefaultModel] = useState({ model: "", provider: "" });
   const [selected, setSelected] = useState("current");
@@ -36,19 +36,18 @@ export function HermesModelsConfig({ model, modelProvider, onModelChange, modelB
   useEffect(() => { onDirtyChange(dirty || busy || builtinDirty); }, [dirty, busy, builtinDirty, onDirtyChange]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true);
-    hermesJson<{ endpoints: Endpoint[] }>("/api/providers/custom-endpoints", { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setEndpoints(data.endpoints ?? []); }).catch(e => { if (!controller.signal.aborted) setError(e.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [revision]);
-  useEffect(() => {
-    const controller = new AbortController();
     Promise.allSettled([
-      hermesJson<{ providers: typeof providers; model?: string; provider?: string }>("/api/model/options", { signal: controller.signal }),
+      hermesJson<{ endpoints: Endpoint[] }>("/api/providers/custom-endpoints", { signal: controller.signal }),
+      hermesJson<HermesModelOptions>(hermesModelOptionsPath(), { signal: controller.signal }),
       hermesJson<{ providers: HermesOAuthProvider[] }>("/api/providers/oauth", { signal: controller.signal }),
-    ]).then(([catalog, auth]) => {
+    ]).then(([saved, catalog, auth]) => {
       if (controller.signal.aborted) return;
+      if (saved.status === "fulfilled") setEndpoints(saved.value.endpoints ?? []);
+      else setError(saved.reason instanceof Error ? saved.reason.message : String(saved.reason));
       if (catalog.status === "fulfilled") { setProviders(catalog.value.providers ?? []); setDefaultModel({ model: catalog.value.model ?? "", provider: catalog.value.provider ?? "" }); }
       else setError(ht("无法读取提供商目录，自定义接口仍可添加。"));
       if (auth.status === "fulfilled") setOAuth(auth.value.providers ?? []);
+      setLoading(false);
     });
     return () => controller.abort();
     // Catalog strings do not depend on the interface language.
@@ -96,7 +95,7 @@ export function HermesModelsConfig({ model, modelProvider, onModelChange, modelB
   const ready = draft.name.trim() && /^https?:\/\//.test(draft.base_url) && draft.model.trim() && (!draft.context_length || (Number.isInteger(Number(draft.context_length)) && Number(draft.context_length) > 0));
   const currentEndpoint = endpoints.find(endpoint => endpoint.id === selected);
   const cards: HermesModelCard[] = [
-    ...endpoints.map(endpoint => ({ id: endpoint.id, name: endpoint.name, baseUrl: endpoint.base_url, models: [...new Set([endpoint.model, ...(endpoint.models ?? [])].filter(Boolean))], defaultModel: endpoint.is_current && defaultModel.model ? defaultModel.model : endpoint.model, isDefault: endpoint.is_current, custom: true })),
+    ...endpoints.map(endpoint => ({ id: endpoint.id, name: endpoint.name, baseUrl: endpoint.base_url, models: hermesEndpointModels(endpoint, providers), defaultModel: endpoint.is_current && defaultModel.model ? defaultModel.model : endpoint.model, isDefault: endpoint.is_current, custom: true })),
     ...providers.filter(provider => !endpoints.some(endpoint => provider.slug.replace(/^custom:/, "").toLowerCase() === endpoint.id.replace(/^custom:/, "").toLowerCase() || (provider.is_user_defined && provider.name === endpoint.name))).map(provider => ({ id: provider.slug, name: provider.name, baseUrl: provider.api_url, models: provider.models ?? [], defaultModel: provider.slug === defaultModel.provider ? defaultModel.model : undefined, isDefault: provider.is_current || provider.slug === defaultModel.provider, custom: false, connected: provider.authenticated })),
   ];
   function editCard(card: HermesModelCard) {
@@ -112,9 +111,11 @@ export function HermesModelsConfig({ model, modelProvider, onModelChange, modelB
         setEndpoints(previous => previous.map(row => row.id === endpoint.id ? { ...row, models: result.models, model_details: result.model_details } : row));
         setNotice(ht("已获取 {count} 个模型", { count: result.models.length }));
       } else {
-        const result = await hermesJson<{ providers: typeof providers; model?: string; provider?: string }>("/api/model/options?refresh=1");
+        const [result, saved] = await Promise.all([
+          hermesJson<HermesModelOptions>(hermesModelOptionsPath(true)),
+          hermesJson<{ endpoints: Endpoint[] }>("/api/providers/custom-endpoints"),
+        ]);
         setProviders(result.providers ?? []); setDefaultModel({ model: result.model ?? "", provider: result.provider ?? "" });
-        const saved = await hermesJson<{ endpoints: Endpoint[] }>("/api/providers/custom-endpoints");
         setEndpoints(saved.endpoints ?? []); setNotice(ht("模型列表已获取"));
       }
     });
@@ -128,7 +129,7 @@ export function HermesModelsConfig({ model, modelProvider, onModelChange, modelB
         result = await hermesJson("/api/model/set", { method: "POST", body: JSON.stringify({ ...body, confirm_expensive_model: true }) });
         if (result.confirm_required) throw new Error(ht("模型切换仍需确认，请在 Hermes 中检查。"));
       }
-      onModelChange(id, card.id); setRevision(value => value + 1); setNotice(ht("默认模型已更新"));
+      onModelChange(id, card.id, true); setRevision(value => value + 1); setNotice(ht("默认模型已更新"));
     });
   }
   return <div className={`hermes-models-config${selected === "current" ? " is-overview" : ""}`}>
@@ -147,6 +148,6 @@ export function HermesModelsConfig({ model, modelProvider, onModelChange, modelB
       <div className="hermes-preference-row"><div><strong>{ht("自动发现模型")}</strong><p>{ht("自动读取这个接口提供的模型列表。")}</p></div><ConfigSwitch label={ht("自动发现模型")} checked={draft.discover_models} disabled={busy} onChange={value => change("discover_models", value)} /></div>
       <div className="hermes-preference-row"><div><strong>{ht("保存后设为默认提供商")}</strong><p>{ht("保存时将此提供商和模型用于之后的新对话。")}</p></div><ConfigSwitch label={ht("保存后设为默认提供商")} checked={draft.make_default} disabled={busy || modelBusy} onChange={value => change("make_default", value)} /></div>
       {confirmDelete && <ConfigNotice><p>{ht("确认删除这个提供商？")}</p><ConfigButton disabled={busy} onClick={() => setConfirmDelete(false)}>{ht("取消")}</ConfigButton><ConfigButton variant="danger" disabled={busy} onClick={() => void run(async () => { await hermesJson(endpointPath(draft.id), { method: "DELETE" }); setSelected("current"); setDraft(empty); setBaseline(JSON.stringify(empty)); setRevision(value => value + 1); setNotice(ht("提供商已删除")); })}>{ht("确认删除")}</ConfigButton></ConfigNotice>}
-      <ConfigFooter status={dirty ? ht("有未保存的修改") : currentEndpoint?.is_current ? ht("默认提供商") : ""}>{selected !== "new" && <ConfigButton disabled={busy || dirty || modelBusy || currentEndpoint?.is_current} onClick={() => void run(async () => { await hermesJson(`${endpointPath(draft.id)}/activate`, { method: "POST", body: "{}" }); onModelChange(draft.model,draft.id); setRevision(value => value + 1); setNotice(ht("默认提供商已切换")); })}>{ht("设为默认")}</ConfigButton>}<ConfigButton variant="primary" disabled={busy || !ready || (modelBusy && draft.make_default) || (!dirty && selected !== "new")} onClick={() => void run(async () => { const result = await hermesJson<{ id: string }>("/api/providers/custom-endpoints", { method: "POST", body: JSON.stringify(payload()) }); const saved = { ...draft, id: result.id, api_key: "", make_default: false }; setDraft(saved); setBaseline(JSON.stringify(saved)); setSelected(result.id); setRevision(value => value + 1); if (draft.make_default) onModelChange(draft.model,result.id); setNotice(ht("提供商已保存")); })}>{busy ? ht("保存中…") : ht("保存提供商")}</ConfigButton></ConfigFooter>
+      <ConfigFooter status={dirty ? ht("有未保存的修改") : currentEndpoint?.is_current ? ht("默认提供商") : ""}>{selected !== "new" && <ConfigButton disabled={busy || dirty || modelBusy || currentEndpoint?.is_current} onClick={() => void run(async () => { await hermesJson(`${endpointPath(draft.id)}/activate`, { method: "POST", body: "{}" }); onModelChange(draft.model,draft.id,true); setRevision(value => value + 1); setNotice(ht("默认提供商已切换")); })}>{ht("设为默认")}</ConfigButton>}<ConfigButton variant="primary" disabled={busy || !ready || (modelBusy && draft.make_default) || (!dirty && selected !== "new")} onClick={() => void run(async () => { const result = await hermesJson<{ id: string }>("/api/providers/custom-endpoints", { method: "POST", body: JSON.stringify(payload()) }); const saved = { ...draft, id: result.id, api_key: "", make_default: false }; setDraft(saved); setBaseline(JSON.stringify(saved)); setSelected(result.id); setRevision(value => value + 1); if (draft.make_default) onModelChange(draft.model,result.id,true); setNotice(ht("提供商已保存")); })}>{busy ? ht("保存中…") : ht("保存提供商")}</ConfigButton></ConfigFooter>
     </div>}</ConfigDetail></ConfigSplitView>}{picker && <HermesProviderPicker onClose={() => setPicker(false)} onCustom={() => {if (choose("new")) setPicker(false);}} onChoose={choice => {if (choose("builtin", choice)) setPicker(false);}}/>}</div>;
 }

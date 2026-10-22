@@ -2,17 +2,10 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { allowFileRoot } from "./file-access";
-import { isValidWebSessionToken, isWebAuthEnabled, PI_WEB_SESSION_COOKIE } from "./web-auth";
-import { isApiRequestAllowed, isLocalWebDevelopment } from "./request-security";
+import { webRequestDenied } from "./web-request-auth.mjs";
 import { resolveHermesConnection, isLocalHermesDashboard } from "./hermes-connection.mjs";
 
-export function projectRequestDenied(request: Request): Response | null {
-  if (!isApiRequestAllowed(request)) return Response.json({ error: "请求来源不允许。" }, { status: 403 });
-  const cookie = request.headers.get("cookie")?.split(";").map(item => item.trim()).find(item => item.startsWith(`${PI_WEB_SESSION_COOKIE}=`))?.slice(PI_WEB_SESSION_COOKIE.length + 1);
-  const loopback = isLocalWebDevelopment(request);
-  if (!isValidWebSessionToken(cookie) && (isWebAuthEnabled() || !loopback)) return Response.json({ error: "请先登录。" }, { status: 401 });
-  return null;
-}
+export const projectRequestDenied = webRequestDenied;
 
 export async function projectRpcOptions(signal: AbortSignal) {
   const connection = await resolveHermesConnection();

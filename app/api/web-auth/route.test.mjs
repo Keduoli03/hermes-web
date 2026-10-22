@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "../../../lib/__fixtures__/web-auth-env.mjs";
 import test, { after, before, beforeEach } from "node:test";
 import { createJiti } from "jiti";
 import { NextRequest } from "next/server.js";
@@ -76,7 +77,7 @@ function request(method, body, headers = {}) {
   });
 }
 
-test("logs in with one password and reports the signed session", async () => {
+test("logs in with one password and reports the opaque session", async () => {
   let response = await POST(request("POST", { password: "wrong" }));
   assert.equal(response.status, 401);
   assert.equal(response.headers.has("set-cookie"), false);
@@ -86,7 +87,7 @@ test("logs in with one password and reports the signed session", async () => {
   response = await POST(request("POST", { password: "correct horse battery staple" }));
   assert.equal(response.status, 200);
   const cookie = response.headers.get("set-cookie");
-  assert.match(cookie, /^pi_web_session=v1\./);
+  assert.match(cookie, /^pi_web_session=web\./);
   assert.match(cookie, /HttpOnly/i);
   assert.match(cookie, /SameSite=Lax/i);
   assert.match(cookie, /Path=\//i);
@@ -111,11 +112,16 @@ test("blocks further attempts after a failure, even with the right password", as
   assert.ok(body.retryAfterMs > 0 && body.retryAfterMs <= 1000);
 });
 
-test("logout clears the session cookie", async () => {
-  const response = await DELETE(request("DELETE"));
+test("logout clears and revokes the session, including a copied cookie", async () => {
+  const login = await POST(request("POST", { password: process.env.PI_WEB_PASSWORD }));
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  assert.equal((await (await GET(request("GET", undefined, { Cookie: cookie }))).json()).authenticated, true);
+  const response = await DELETE(request("DELETE", undefined, { Cookie: cookie }));
   assert.equal(response.status, 200);
   assert.match(response.headers.get("set-cookie"), /pi_web_session=;/);
   assert.match(response.headers.get("set-cookie"), /Max-Age=0/i);
+  assert.equal((await (await GET(request("GET", undefined, { Cookie: cookie }))).json()).authenticated, false);
+  assert.equal(proxy(new NextRequest("http://localhost/api/hermes/api/config", { headers: { Host: "localhost", Cookie: cookie } })).status, 401);
 });
 
 test("rejects cross-origin login attempts", async () => {

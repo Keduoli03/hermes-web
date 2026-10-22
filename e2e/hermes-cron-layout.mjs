@@ -28,7 +28,10 @@ try {
     let json={};
     if(path==="/api/status")json={version:"fixture"};
     else if(path==="/v1/models")json={data:[{id:"hermes-agent"}]};
-    else if(path==="/api/sessions")json={sessions:[],total:0};
+    else if(path==="/api/sessions"){
+      assert.equal(url.searchParams.get("exclude_sources"),"cron");
+      json={sessions:[{id:"ordinary",source:"web",title:"普通会话"},{id:"scheduled",source:"cron",title:"定时任务会话",pinned:true}],total:1};
+    }
     else if(path==="/api/cron/jobs"){
       if(request.method()==="POST"){const body=request.postDataJSON();writes.push({path,method:"POST",body});jobs.push({...body,id:"new-task",profile:"default"});}
       json=jobs;
@@ -41,7 +44,7 @@ try {
       }
       if(path.endsWith("/pause"))job.paused=true;
       if(path.endsWith("/resume"))job.paused=false;
-      if(path.endsWith("/runs"))json={runs:[{id:"run-1",status:"completed",started_at:1792458000,output:"任务已完成。"}]};
+      if(path.endsWith("/runs"))json={runs:[{id:"run-1",status:"completed",started_at:"2026-10-22T01:02:00Z",output:"任务已完成。"},{status:"completed",started_at:1792630920,output:"仅脚本运行记录。"}]};
       if(request.method()==="DELETE")jobs=jobs.filter(item=>item.id!==id);
     }
     return route.fulfill({json});
@@ -51,6 +54,8 @@ try {
   const editor=cron.getByRole("form");
   const openCron=async()=>{
     await page.goto(origin,{waitUntil:"networkidle"});
+    await page.locator(".hermes-session-row").filter({hasText:"普通会话"}).waitFor();
+    assert.equal(await page.locator(".hermes-session-row").filter({hasText:"定时任务会话"}).count(),0);
     await page.getByRole("navigation",{name:"主要导航",exact:true}).getByRole("button",{name:"定时任务",exact:true}).click();
     await cron.locator(".hermes-cron-task").first().waitFor();
   };
@@ -74,6 +79,9 @@ try {
   };
   await openCron();await rowsFit();
   await cron.getByRole("button",{name:/^Hermes版本更新检测/}).click();
+  await detail.getByText("任务已完成。",{exact:true}).waitFor();
+  assert.equal(await detail.locator(".hermes-run-card time").first().textContent(),"2026/10/22 09:02");
+  await detail.getByText("仅脚本运行记录。",{exact:true}).waitFor();
   await detail.getByText("投递失败",{exact:true}).waitFor();
   await actionsFit();
   await page.screenshot({path:join(output,"desktop-detail.png")});

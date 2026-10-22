@@ -1,12 +1,12 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, LogIn } from "lucide-react";
 import { I18nProvider, useI18n } from "@/hooks/useI18n";
 import { useHermesI18n } from "@/hooks/useHermesI18n";
 import { safeLoginDestination } from "@/lib/login-destination";
+import { HermesAvatar } from "@/components/HermesAvatar";
 
 function safeDestination(): string {
   const destination = new URLSearchParams(window.location.search).get("next");
@@ -64,7 +64,7 @@ function LoginForm() {
     <main className="web-login-page">
       <div className="web-login-shell">
         <header className="web-login-brand">
-          <Image src="/icons/apple-touch-icon.png" width={52} height={52} alt="" priority />
+          <HermesAvatar size={52} priority />
           <div>
             <h1>Hermes Web</h1>
             <p>{ht("登录后访问你的 Hermes 面板。")}</p>

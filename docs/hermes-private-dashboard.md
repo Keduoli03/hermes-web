@@ -111,8 +111,10 @@ All tabs share one Hermes backend; panel accounts do not isolate OS access or da
 
    A 200 is necessary but not sufficient. A redirect means the backend auth or
    address configuration is still unsuitable for the local handshake.
-3. Sign in to Hermes Web and reconnect in Account and access. The server validates
-   the discovered credential against the read-only config schema endpoint.
+3. Sign in to Hermes Web and reconnect in Account and access. Management HTTP,
+   the ordinary-chat API and native project WebSocket each show an independent
+   status. The server checks the read-only config schema, API model catalogue
+   and `gateway.ping` RPC. These checks never run inference or create a session.
 4. Read Skills and Cron, then select a project directory to verify the native
    WebSocket connection. A working ordinary chat alone proves only API Server
    connectivity. A genuine model run is a separate, potentially billable check.

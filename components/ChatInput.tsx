@@ -93,6 +93,9 @@ interface Props {
   slashCommandsLoading?: boolean;
   onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
   onBuiltinCommand?: (message: string) => Promise<BuiltinSlashCommandResult>;
+  /** Alternate backends expose only their implemented local commands. */
+  builtinCommands?: readonly BuiltinSlashCommand[];
+  submissionDisabled?: boolean;
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
   onAudioUnlock?: () => void;
@@ -275,7 +278,7 @@ function formatTokenCount(tokens: number): string {
   return tokens.toLocaleString();
 }
 
-type BuiltinSlashCommand = {
+export type BuiltinSlashCommand = {
   name: string;
   description: string;
   source: "builtin";
@@ -296,14 +299,14 @@ const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
   { name: "clone", description: "chat.commandClone", source: "builtin" },
 ];
 
-function getBuiltinSlashCommand(message: string): BuiltinSlashCommand | undefined {
+function getBuiltinSlashCommand(message: string, commands: readonly BuiltinSlashCommand[] = BUILTIN_SLASH_COMMANDS): BuiltinSlashCommand | undefined {
   const match = message.trim().match(/^\/([^\s]+)(?:\s|$)/);
   if (!match) return undefined;
-  return BUILTIN_SLASH_COMMANDS.find((command) => command.name === match[1]);
+  return commands.find((command) => command.name === match[1]);
 }
 
-export function canRunBuiltinSlashCommandWhileStreaming(message: string): boolean {
-  return getBuiltinSlashCommand(message)?.availableWhileStreaming === true;
+export function canRunBuiltinSlashCommandWhileStreaming(message: string, commands: readonly BuiltinSlashCommand[] = BUILTIN_SLASH_COMMANDS): boolean {
+  return getBuiltinSlashCommand(message, commands)?.availableWhileStreaming === true;
 }
 
 /**
@@ -312,8 +315,8 @@ export function canRunBuiltinSlashCommandWhileStreaming(message: string): boolea
  * Settings › MCP when pi's built-in MCP extension owns it (useAgentSession)
  * and is otherwise sent as before.
  */
-export function offersBuiltinSlashCommandWhileStreaming(message: string): boolean {
-  return canRunBuiltinSlashCommandWhileStreaming(message) || isBareMcpCommand(message);
+export function offersBuiltinSlashCommandWhileStreaming(message: string, commands: readonly BuiltinSlashCommand[] = BUILTIN_SLASH_COMMANDS): boolean {
+  return canRunBuiltinSlashCommandWhileStreaming(message, commands) || isBareMcpCommand(message);
 }
 
 export function isExactSlashCommand(message: string, command: SlashCommandPaletteItem): boolean {
@@ -659,7 +662,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
-  onBuiltinCommand,
+  onBuiltinCommand, builtinCommands = BUILTIN_SLASH_COMMANDS, submissionDisabled = false,
   soundEnabled, onSoundToggle, onAudioUnlock,
   onPromptWithStreamingBehavior,
   draftKey,
@@ -1067,15 +1070,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   }, [attachedImages.length, clearInput, onBuiltinCommand]);
 
   const handleSend = useCallback(async () => {
+    if (submissionDisabled) return;
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
-    const builtinAllowed = !isStreaming || offersBuiltinSlashCommandWhileStreaming(msg);
+    const builtinAllowed = !isStreaming || offersBuiltinSlashCommandWhileStreaming(msg, builtinCommands);
     if (builtinAllowed && await runBuiltinCommand(msg)) return;
     if (isStreaming) return;
     clearInput();
     onSend(msg, attachedImages.length ? attachedImages : undefined);
-  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, builtinCommands, submissionDisabled]);
 
   const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1083,10 +1087,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    const builtinCommands = isStreaming
-      ? BUILTIN_SLASH_COMMANDS.filter((command) => command.availableWhileStreaming)
-      : BUILTIN_SLASH_COMMANDS;
-    const commands = [...builtinCommands, ...(slashCommands ?? [])];
+    const availableCommands = isStreaming
+      ? builtinCommands.filter((command) => command.availableWhileStreaming)
+      : builtinCommands;
+    const commands = [...availableCommands, ...(slashCommands ?? [])];
     return [...commands]
       .filter((command) => {
         const name = command.name.toLowerCase();
@@ -1309,7 +1313,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         onFollowUp(msg, images);
       }
     };
-    if (!attachedImages.length && onBuiltinCommand && canRunBuiltinSlashCommandWhileStreaming(msg)) {
+    if (!attachedImages.length && onBuiltinCommand && canRunBuiltinSlashCommandWhileStreaming(msg, builtinCommands)) {
       void runBuiltinCommand(msg);
       return;
     }
@@ -1322,7 +1326,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       return;
     }
     queue();
-  }, [value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand]);
+  }, [value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand, builtinCommands]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = displayedSlashCommands.length - 1;
@@ -2368,7 +2372,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
           ) : (
             <button
               onClick={handleSend}
-              disabled={!value.trim() && !attachedImages.length}
+              disabled={submissionDisabled || (!value.trim() && !attachedImages.length)}
               title={t("chat.send")}
               aria-label={t("chat.send")}
               style={{
@@ -2419,6 +2423,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
           <div style={{ flex: isMobile ? "1 1 auto" : "0 0 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
             <button
               onClick={() => fileInputRef.current?.click()}
+              disabled={submissionDisabled}
              title={t("chat.attachFiles")}
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
@@ -2426,8 +2431,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                 background: "none", border: "none",
                 borderRadius: 9,
                 color: attachedImages.length ? "var(--accent)" : "var(--text-muted)",
-                cursor: "pointer",
-                opacity: 1,
+                cursor: submissionDisabled ? "not-allowed" : "pointer",
+                opacity: submissionDisabled ? 0.5 : 1,
                 transition: "background 0.12s, color 0.12s",
               }}
               onMouseEnter={(e) => {

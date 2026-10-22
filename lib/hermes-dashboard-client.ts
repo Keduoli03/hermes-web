@@ -1,10 +1,11 @@
 import { cachedHermesToken, fetchConnectedHermes } from "./hermes-connection.mjs";
+import { hermesDashboardOrigin, configuredHermesToken } from "./hermes-server-config.mjs";
 
 export function isSafeHermesApiSegment(segment: string): boolean {
   return Boolean(segment) && segment !== "." && segment !== ".." && /^[\p{L}\p{M}\p{N}_ .:{}@()+-]+$/u.test(segment);
 }
 
-export function buildHermesDashboardUrl(path: string, query = "", baseUrl = process.env.HERMES_DASHBOARD_URL ?? "http://127.0.0.1:8648"): string {
+export function buildHermesDashboardUrl(path: string, query = "", baseUrl = hermesDashboardOrigin()): string {
   if (!path.startsWith("/") || path.startsWith("//") || !["api", "v1", "health"].includes(path.split("/")[1])) {
     throw new Error("Hermes dashboard path must be a relative API path");
   }
@@ -30,7 +31,7 @@ export function buildHermesDashboardUrl(path: string, query = "", baseUrl = proc
   return url.toString();
 }
 
-export function getHermesDashboardHeaders(token = process.env.HERMES_DASHBOARD_SESSION_TOKEN ?? ""): Headers {
+export function getHermesDashboardHeaders(token = configuredHermesToken()): Headers {
   const value = token.trim();
   if (!value) throw new Error("Hermes dashboard session token is not configured");
   return new Headers({

@@ -16,7 +16,7 @@ try {
   await context.addCookies([{name:"pi_web_session",value:createWebSessionToken(process.env.PI_WEB_PASSWORD),url:origin}]);
   const page=await context.newPage();
   const errors=[],writes=[];
-  let authenticated=true,authFailure=false,profileFailure=false,logoutFailure=false,active="default",reconnects=0,logouts=0;
+  let authenticated=true,authFailure=false,profileFailure=false,logoutFailure=false,backendFailure=false,active="default",reconnects=0,logouts=0;
   page.on("pageerror",error=>errors.push(error.message));
   await page.route("**/api/web-auth",route=>{
     if(route.request().method()==="DELETE"){
@@ -29,7 +29,7 @@ try {
   });
   await page.route("**/api/hermes-connection",route=>{
     if(route.request().method()==="POST")reconnects++;
-    return route.fulfill({json:{connected:true,automatic:true,local:true}});
+    return route.fulfill({json:{connected:!backendFailure,automatic:true,local:true,dashboard:{connected:true},api:backendFailure?{connected:false,code:"api_auth_rejected",error:"Hermes 聊天服务拒绝了连接认证，请检查服务端接口密钥。"}:{connected:true},project:backendFailure?{connected:false,code:"project_unavailable",error:"无法连接 Hermes 项目会话服务，请检查 WebSocket 和聊天功能是否启用。"}:{connected:true}}});
   });
   await page.route("**/api/hermes/**",route=>{
     const request=route.request(),path=new URL(request.url()).pathname.replace("/api/hermes","");
@@ -70,9 +70,20 @@ try {
   await menu().getByRole("menuitem",{name:"认证与登录",exact:true}).click();
   const auth=page.getByRole("dialog",{name:"账户与配置",exact:true});
   await auth.getByText("已自动连接本机 Hermes",{exact:true}).waitFor();
+  await auth.getByText("聊天服务已连接",{exact:true}).waitFor();
+  await auth.getByText("项目会话已连接",{exact:true}).waitFor();
   await auth.getByRole("button",{name:"重新连接",exact:true}).click();
   await page.waitForFunction(()=>!Array.from(document.querySelectorAll(".hermes-account-panel button")).some(button=>button.textContent.includes("正在连接")));
   assert.equal(reconnects,1);
+  backendFailure=true;
+  await auth.getByRole("button",{name:"重新连接",exact:true}).click();
+  await auth.getByText("聊天服务尚未连接",{exact:true}).waitFor();
+  await auth.getByText("项目会话尚未连接",{exact:true}).waitFor();
+  await auth.getByText("已自动连接本机 Hermes",{exact:true}).waitFor();
+  await page.screenshot({path:join(output,"partial-connection-failure.png")});
+  backendFailure=false;
+  await auth.getByRole("button",{name:"重新连接",exact:true}).click();
+  await auth.getByText("项目会话已连接",{exact:true}).waitFor();
   await page.screenshot({path:join(output,"authentication.png")});
   await auth.getByRole("button",{name:"返回账户菜单",exact:true}).click();
   await page.keyboard.press("Escape");
@@ -87,7 +98,7 @@ try {
   authFailure=false;await menu().getByRole("menuitem",{name:"重试",exact:true}).click();
   await menu().getByRole("menuitemradio",{name:"工作方案",exact:true}).waitFor();
   await page.keyboard.press("Escape");
-  for(const [name,width,height,theme] of [["dark",818,772,"dark"],["mobile",390,844,"light"]]){
+  for(const [name,width,height,theme] of [["dark",818,772,"dark"],["mobile",390,844,"light"],["narrow",320,740,"light"]]){
     await page.setViewportSize({width,height});
     await page.evaluate(theme=>localStorage.setItem("pi-theme",theme),theme);
     await page.reload({waitUntil:"networkidle"});
@@ -98,6 +109,10 @@ try {
     const bounds=await surface.boundingBox();
     assert.ok(bounds.x>=0 && bounds.y>=0 && bounds.x+bounds.width<=width+1 && bounds.y+bounds.height<=height+1);
     assert.equal(await surface.evaluate(el=>el.scrollWidth>el.clientWidth),false);
+    await menu().getByRole("menuitem",{name:"认证与登录",exact:true}).click();
+    await auth.getByText("项目会话已连接",{exact:true}).waitFor();
+    await page.screenshot({path:join(output,`${name}-authentication.png`)});
+    assert.equal(await auth.evaluate(el=>el.scrollWidth>el.clientWidth),false);
     await page.keyboard.press("Escape");
   }
   await page.setViewportSize({width:818,height:772});

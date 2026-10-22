@@ -8,9 +8,8 @@ import {
 import { hasJsonContentType, isApiRequestAllowed, isLocalWebDevelopment } from "@/lib/request-security";
 import {
   createWebSessionToken,
-  isValidBasicAuthorization,
   isValidWebPassword,
-  isValidWebSessionToken,
+  revokeWebSessionToken,
   isWebPasswordEnabled,
   isWebAuthEnabled,
   isWebUsernameRequired,
@@ -19,7 +18,8 @@ import {
   PI_WEB_SESSION_MAX_AGE,
 } from "@/lib/web-auth";
 import { officialLoginStatus, OAUTH_FLOW_COOKIE } from "@/lib/web-oauth";
-import { officialSession, revokeOfficialSession, takeLoginFlow } from "@/lib/web-oauth-store.mjs";
+import { officialSession, takeLoginFlow } from "@/lib/web-oauth-store.mjs";
+import { authenticateWebRequest } from "@/lib/web-request-auth.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +60,8 @@ export async function GET(request: NextRequest) {
 
   const password = process.env.PI_WEB_PASSWORD;
   const enabled = isWebAuthEnabled(password);
-  const authenticated = !enabled && isLocalWebDevelopment(request)
-    || isValidBasicAuthorization(request.headers.get("authorization"), password)
-    || isValidWebSessionToken(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value, password);
+  const { authenticated, retryAfterMs } = authenticateWebRequest(request);
+  if (retryAfterMs > 0) return tooManyAttempts(retryAfterMs);
   return NextResponse.json(
     { enabled, authenticated, passwordEnabled: isWebPasswordEnabled(password), ...(!enabled && !isLocalWebDevelopment(request) ? { setupRequired: true } : {}), ...(isWebUsernameRequired() ? { usernameRequired: true } : {}), official: officialLoginStatus(), ...(authenticated ? { account: officialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value)?.userId ?? null } : {}) },
     { headers: { "Cache-Control": "no-store" } },
@@ -116,7 +115,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
-  revokeOfficialSession(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value);
+  revokeWebSessionToken(request.cookies.get(PI_WEB_SESSION_COOKIE)?.value);
   takeLoginFlow(request.cookies.get(OAUTH_FLOW_COOKIE)?.value);
   const response = NextResponse.json({ ok: true });
   response.cookies.set({ name: OAUTH_FLOW_COOKIE, value: "", httpOnly: true, sameSite: "lax", secure: isSecureRequest(request), path: "/api/web-auth/official", maxAge: 0 });

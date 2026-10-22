@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { isOfficialLoginEnabled, officialSession } from "./web-oauth-store.mjs";
+import { createPanelSession, readPanelSession, revokePanelSession } from "./web-auth-store.mjs";
 
 export const PI_WEB_AUTH_USERNAME = "pi";
 export function isWebUsernameRequired(): boolean { return Boolean(process.env.PI_WEB_USERNAME?.trim()); }
@@ -63,18 +64,18 @@ export function isValidBasicAuthorization(
   return usernameMatches && passwordMatches;
 }
 
-function sessionSignature(payload: string, password: string): string {
+function passwordIdentity(password: string, salt: string): string {
   const owner = isWebUsernameRequired() ? `${getWebAuthUsername()}:` : "";
-  return createHmac("sha256", password).update(`pi-web-session:${owner}${payload}`, "utf8").digest("hex");
+  return createHmac("sha256", password).update(`hermes-web-password:${salt}:${owner}`, "utf8").digest("hex");
 }
 
 export function createWebSessionToken(
   password: string,
   now = Date.now(),
-  nonce = randomBytes(16).toString("hex"),
 ): string {
-  const payload = `v1.${Math.floor(now / 1000) + PI_WEB_SESSION_MAX_AGE}.${nonce}`;
-  return `${payload}.${sessionSignature(payload, password)}`;
+  if (!isWebPasswordEnabled(password)) throw new Error("Password authentication is disabled");
+  const salt = randomBytes(16).toString("hex");
+  return createPanelSession({ method: "password", salt, identity: passwordIdentity(password, salt), expiresAt: now + PI_WEB_SESSION_MAX_AGE * 1000 });
 }
 
 export function isValidWebSessionToken(
@@ -82,13 +83,12 @@ export function isValidWebSessionToken(
   password = process.env.PI_WEB_PASSWORD,
   now = Date.now(),
 ): boolean {
-  if (token?.startsWith("nous.")) return Boolean(officialSession(token, now));
-  if (!token || !isWebPasswordEnabled(password)) return false;
-
-  const match = /^(v1\.(\d+)\.[a-f0-9]{32})\.([a-f0-9]{64})$/.exec(token);
-  if (!match) return false;
-
-  const expiresAt = Number(match[2]);
-  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(now / 1000)) return false;
-  return secretsEqual(match[3], sessionSignature(match[1], password));
+  const session = readPanelSession(token, now);
+  if (!session) return false;
+  if (session.method === "official" || token?.startsWith("nous.")) return Boolean(officialSession(token, now));
+  return session.method === "password" && isWebPasswordEnabled(password)
+    && typeof session.salt === "string" && /^[a-f0-9]{32}$/.test(session.salt)
+    && typeof session.identity === "string" && secretsEqual(session.identity, passwordIdentity(password, session.salt));
 }
+
+export function revokeWebSessionToken(token: string | undefined): void { revokePanelSession(token); }

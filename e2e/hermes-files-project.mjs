@@ -117,6 +117,7 @@ try {
   await sessions.locator(".hermes-session-row").filter({hasText:"草稿"}).last().locator(".hermes-session").click();
   await page.waitForFunction(()=>document.querySelector(".chat-input-textarea").value==="First draft text");
   page.once("dialog",dialog=>dialog.accept("Workspace notes"));
+  await sessions.locator(".hermes-session-row.active").hover();
   await sessions.locator(".hermes-session-row.active").getByRole("button",{name:"重命名 新会话",exact:true}).click();
   await page.screenshot({path:join(output,"files-and-drafts.png")});
   await composer.press("Enter");

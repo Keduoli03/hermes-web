@@ -3,6 +3,7 @@
 import { Home, Wrench, MessagesSquare, PanelsTopLeft, Clock3, Settings2 } from "lucide-react";
 import { useHermesI18n } from "@/hooks/useHermesI18n";
 import { HermesAccountMenu } from "./HermesAccountMenu";
+import { HermesAvatar } from "./HermesAvatar";
 
 export type HermesWorkspaceView = "home" | "tools" | "channels" | "artifacts" | "cron";
 export const workspaceViews: {id:HermesWorkspaceView;label:string;icon:typeof Home}[] = [
@@ -16,7 +17,7 @@ export const workspaceViews: {id:HermesWorkspaceView;label:string;icon:typeof Ho
 export function HermesActivityRail({view,inert,onNavigate,onSettings,onProfiles}:{view:HermesWorkspaceView;inert:boolean;onNavigate:(view:HermesWorkspaceView)=>void;onSettings:()=>void;onProfiles:()=>void}) {
   const {ht}=useHermesI18n();
   return <nav className="hermes-activity-rail" aria-label={ht("主要导航")} inert={inert}>
-    <div className="hermes-rail-brand" aria-hidden="true">H</div>
+    <div className="hermes-rail-brand" aria-hidden="true"><HermesAvatar size={32} priority /></div>
     {workspaceViews.map(({id,label,icon:Icon})=><button key={id} type="button" aria-label={ht(label)} aria-current={view===id ? "page":undefined} onClick={()=>onNavigate(id)}><Icon size={21} strokeWidth={1.7}/><span className="hermes-rail-tooltip">{ht(label)}</span></button>)}
     <button type="button" className="hermes-rail-settings" aria-label={ht("偏好与设置")} onClick={onSettings}><Settings2 size={21} strokeWidth={1.7}/><span className="hermes-rail-tooltip">{ht("设置")}</span></button>
     <HermesAccountMenu inert={inert} onManageProfiles={onProfiles}/>

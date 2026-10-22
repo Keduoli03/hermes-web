@@ -62,7 +62,7 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
   const [logFile, setLogFile] = useState("agent");
   const [days, setDays] = useState("30");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [runs, setRuns] = useState<unknown>(null);
+  const [runsRevision, setRunsRevision] = useState(0);
   const dirty = saving || ((page === "skills" || page === "config") && text !== savedText) || Boolean(keyValue) || showJobForm;
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
 
@@ -72,7 +72,7 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
       setLoading(true); setError("");
       try {
         const path = page === "cron" ? "/api/cron/jobs" : page === "skills" ? "/api/skills" : page === "keys" ? "/api/env" : page === "config" ? "/api/config/raw" : page === "logs" ? `/api/logs?file=${logFile}&lines=200` : page === "usage" ? `/api/analytics/usage?days=${days}` : page === "tools" ? "/api/tools/toolsets" : "/api/status";
-        const body = await hermesJson<unknown>(path, { signal: controller.signal });
+        const body = await hermesJson<unknown>(path, { signal: controller.signal, ...(revision ? { cache: "reload" } : {}) });
         if (controller.signal.aborted) return;
         if (page === "cron") setJobs(Array.isArray(body) ? body : (body as { jobs?: Job[] }).jobs ?? []);
         else if (page === "skills") setSkills(Array.isArray(body) ? body : (body as { skills?: Skill[] }).skills ?? []);
@@ -157,7 +157,7 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
         <ConfigSidebarList>
         {visibleJobs.map(item=><ConfigSidebarItem key={item.id} className="hermes-cron-task" title={item.name || item.id} disabled={saving} active={showJobForm ? editingJob===item.id : selected===item.id} onClick={()=>{
           if(showJobForm && !window.confirm(ht("放弃未保存的修改？")))return;
-          setSelected(item.id);setShowJobForm(false);setCronDetailOpen(true);setRuns(null);setDeleteTarget(null);
+          setSelected(item.id);setShowJobForm(false);setCronDetailOpen(true);setDeleteTarget(null);
         }}>
           {item.paused ? <Pause size={16} aria-hidden="true"/> : <Clock3 size={16} aria-hidden="true"/>}
           <span className="hermes-cron-task-info"><span className="hermes-cron-task-name">{item.name || item.id}</span><code title={scheduleText(item)}>{scheduleText(item)}</code><span className="hermes-cron-task-meta"><span className="hermes-cron-state" data-paused={Boolean(item.paused)}>{ht(item.paused ? "已暂停" : "已启用")}</span><span title={item.profile ?? "default"}>{hermesValue(item.profile ?? "default")}</span></span></span>
@@ -187,15 +187,15 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
               <ConfigDetailActions>
                 <ConfigButton disabled={saving} onClick={()=>void mutate(jobPath(job,job.paused?"/resume":"/pause"),"POST",undefined,job.paused?ht("已恢复"):ht("已暂停"))}>{job.paused ? <Play size={14} aria-hidden="true"/> : <Pause size={14} aria-hidden="true"/>}{ht(job.paused?"恢复":"暂停")}</ConfigButton>
                 <ConfigButton disabled={saving} onClick={()=>void mutate(jobPath(job,"/trigger"),"POST",undefined,ht("已请求运行"))}><Play size={14} aria-hidden="true"/>{ht("立即运行")}</ConfigButton>
-                <ConfigButton disabled={saving} onClick={()=>{setSaving(true);setError("");void hermesJson(jobPath(job,"/runs")).then(setRuns).catch((e:Error)=>setError(e.message)).finally(()=>setSaving(false));}}><History size={14} aria-hidden="true"/>{ht("运行记录")}</ConfigButton>
+                <ConfigButton disabled={saving} onClick={()=>setRunsRevision(value=>value+1)}><History size={14} aria-hidden="true"/>{ht("运行记录")}</ConfigButton>
               </ConfigDetailActions>
             </div>
           </header>
           <dl className="hermes-cron-summary"><div><dt>{ht("执行计划")}</dt><dd><code>{scheduleText(job)}</code></dd></div><div><dt>{ht("下次运行")}</dt><dd>{hermesDate(job.next_run_at)}</dd></div><div><dt>{ht("最近状态")}</dt><dd className="hermes-cron-result" data-error={/fail|error/.test(job.last_status ?? "")} title={job.last_status}>{/fail|error/.test(job.last_status ?? "") && <CircleAlert size={14} aria-hidden="true"/>}{jobStatus(job.last_status)}</dd></div></dl>
+          <RunHistory key={jobPath(job)} path={jobPath(job,"/runs")} revision={runsRevision} />
           <section className="hermes-cron-prompt"><h3>{ht("任务提示词")}</h3><div className="hermes-cron-document">{job.prompt ? <MarkdownBody>{job.prompt}</MarkdownBody> : <p>{ht("未设置任务提示词")}</p>}</div></section>
           <details className="hermes-cron-advanced"><summary>{ht("执行配置")}</summary><dl className="hermes-cron-config">{[[ht("结果投递（本地 / 平台）"),hermesValue(job.deliver || "local")],[ht("模型"),job.model || ht("跟随默认")],[ht("提供商"),job.provider || ht("跟随默认")],[ht("工作目录"),job.workdir || ht("跟随默认")],...(job.skills?.length ? [[ht("技能"),job.skills.join(", ")]] : []),...(job.script ? [[ht("脚本（脚本目录内）"),job.script]] : [])].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>
           {deleteTarget === job.id && <ConfigNotice>{ht("删除任务「")}{job.name || job.id}」？ <ConfigButton onClick={() => setDeleteTarget(null)}>{ht("取消")}</ConfigButton> <ConfigButton variant="danger" disabled={saving} onClick={() => void mutate(jobPath(job), "DELETE", undefined, ht("已删除任务"), () => {setSelected("");setCronDetailOpen(false);})}>{ht("确认删除")}</ConfigButton></ConfigNotice>}
-          {runs !== null && <RunHistory data={runs} />}
         </article> : <ConfigEmptyState>{ht("选择一个任务，或新建定时任务")}</ConfigEmptyState>}
       </ConfigDetail></ConfigSplitView>}
       {page === "skills" && <ConfigSplitView><HermesSkillList skills={skills} query={filter} selected={selected} busy={saving} loading={loading} onQueryChange={setFilter} onCreate={createSkill} onRefresh={()=>setRevision(n=>n+1)} onSelect={s=>{if(text !== savedText && !window.confirm(ht("放弃未保存的技能内容？")))return;setSelected(s.name);setNewSkill(false);setPreview(true);}} onToggle={(s,enabled)=>void mutate("/api/skills/toggle","PUT",{name:s.name,enabled},enabled ? ht("技能已启用") : ht("技能已禁用"))}/><ConfigDetail>
@@ -221,8 +221,25 @@ export function HermesManagement({ page, onDirtyChange }: { page: Exclude<Hermes
 }
 
 type RunRecord = { id?: string; session_id?: string; status?: string; started_at?: string | number; output?: string; preview?: string; message_count?: number };
-function RunHistory({ data }: { data: unknown }) {
+function RunHistory({ path, revision }: { path: string; revision: number }) {
   const { ht } = useHermesI18n();
+  const [data, setData] = useState<unknown>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setError("");
+    hermesJson(path, { signal: controller.signal }).then(body => {
+      if (!controller.signal.aborted) setData(body);
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [path, revision, retry]);
+  if (loading) return <ConfigNotice>{ht("正在读取 Hermes…")}</ConfigNotice>;
+  if (error) return <div role="alert"><ConfigNotice>{error} <ConfigButton onClick={()=>setRetry(value=>value+1)}>{ht("刷新")}</ConfigButton></ConfigNotice></div>;
+  if (data === null) return null;
   const records = Array.isArray(data) ? data as RunRecord[] : (data as { runs?: RunRecord[] }).runs ?? [];
   return <section className="hermes-run-history" aria-label={ht("任务运行记录")}><h3>{ht("运行记录")}</h3>{!records.length ? <ConfigEmptyState>{ht("暂无运行记录")}</ConfigEmptyState> : records.map((run, index) => <article className="hermes-run-card" key={run.id ?? run.session_id ?? index}><header><strong>{hermesValue(run.status)}</strong><time>{hermesDate(run.started_at)}</time></header>{run.message_count !== undefined && <p>{run.message_count} {ht("条消息")}</p>}{(run.output || run.preview) && <div className="hermes-run-output">{run.output || run.preview}</div>}<details><summary>{ht("原始记录")}</summary><pre className="hermes-json">{pretty(run)}</pre></details></article>)}</section>;
 }

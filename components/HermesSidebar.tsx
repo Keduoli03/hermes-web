@@ -11,8 +11,10 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { ChevronIcon, FolderIcon, PencilIcon, PlusIcon, RefreshIcon, SearchIcon, TerminalIcon, TrashIcon, UploadIcon } from "./SidebarIcons";
 import type { HermesSettingsSection } from "./HermesSettingsDialog";
+import { searchHermesSessions, type HermesSearchHit, type HermesSearchMatch } from "@/lib/hermes-search";
+import { isHermesConversation } from "@/lib/hermes-conversations";
 
-export type HermesSessionRow = { id: string; title?: string | null; preview?: string; message_count?: number; last_active?: number; cwd?:string; git_branch?:string; pinned?:boolean; archived?:boolean; draft?:boolean };
+export type HermesSessionRow = { id: string; source?: string; title?: string | null; preview?: string; message_count?: number; last_active?: number; cwd?:string; git_branch?:string; pinned?:boolean; archived?:boolean; draft?:boolean };
 type FileAction = "files" | "terminal" | "search" | "upload" | "refresh" | "new";
 export function HermesUiIcon({ name }: { name: "models" | "skills" | "settings" | "sidebar" | "right-sidebar" | "history" | "tools" }) {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{
@@ -24,14 +26,14 @@ export function HermesUiIcon({ name }: { name: "models" | "skills" | "settings" 
   }</svg>;
 }
 
-export function HermesSidebar({ sessions, selected, busy, directoryBusy, loading, cwd, branch, onCwdChange, onNew, onSelect, onSettings, onOpenFile, onOpenTerminal, onMention, onRename, onDelete, onPin, onArchive, hasMore, onLoadMore, onClose, refreshKey }: {
+export function HermesSidebar({ sessions, selected, busy, directoryBusy, loading, cwd, branch, onCwdChange, onNew, onSelect, onSettings, onOpenFile, onOpenTerminal, onMention, onRename, onDelete, onPin, onArchive, hasMore, onLoadMore, onClose, refreshKey, sessionRevision = 0 }: {
   sessions: HermesSessionRow[]; selected: string | null; busy: boolean; directoryBusy: boolean; loading: boolean;
   cwd: string | null; branch?: string; onCwdChange: (cwd: string | null) => Promise<void>;
-  onNew: (cwd: string) => Promise<void>; onSelect: (id: string) => void; onSettings: (section: HermesSettingsSection) => void;
+  onNew: (cwd: string) => Promise<void>; onSelect: (id: string, match?: HermesSearchMatch) => void; onSettings: (section: HermesSettingsSection) => void;
   onOpenFile: (path: string) => void; onOpenTerminal: (cwd: string) => void; onMention: (path: string) => void;
   onRename: (session: HermesSessionRow) => void; onDelete: (session: HermesSessionRow) => void;
   onPin:(session:HermesSessionRow)=>void; onArchive:(session:HermesSessionRow)=>void; hasMore:boolean; onLoadMore:()=>void;
-  onClose: () => void; refreshKey: number;
+  onClose: () => void; refreshKey: number; sessionRevision?: number;
 }) {
   const { ht } = useHermesI18n();
   const [archivedOpen,setArchivedOpen]=useState(false);
@@ -39,6 +41,30 @@ export function HermesSidebar({ sessions, selected, busy, directoryBusy, loading
   useEffect(()=>{const close=(e:KeyboardEvent)=>{if(e.key === "Escape")setMenuId(null);};document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close);},[]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [searchLimit, setSearchLimit] = useState(20);
+  const [searchRevision, setSearchRevision] = useState(0);
+  const [searchResult, setSearchResult] = useState<{ query: string; limit: number; rows: HermesSearchHit[] } | null>(null);
+  const [searchError, setSearchError] = useState<{ query: string; message: string } | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const query = searchOpen ? search.trim() : "";
+  useEffect(() => {
+    if (!query) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setSearchBusy(true); setSearchError(null);
+      searchHermesSessions(query, searchLimit, controller.signal).then(rows => {
+        if (!controller.signal.aborted) setSearchResult({ query, limit: searchLimit, rows });
+      }).catch(error => {
+        if (!controller.signal.aborted) setSearchError({ query, message: error instanceof Error ? error.message : String(error) });
+      }).finally(() => { if (!controller.signal.aborted) setSearchBusy(false); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query, searchLimit, searchRevision, sessionRevision]);
+  const searchRows = searchResult?.query === query ? searchResult.rows : [];
+  const visibleSessions: (HermesSessionRow & { snippet?: string })[] = query
+    ? [...sessions.filter(s => s.draft && `${s.title ?? ""} ${s.cwd ?? ""}`.toLowerCase().includes(query.toLowerCase())), ...searchRows]
+    : sessions.filter(s => isHermesConversation(s) && Boolean(s.archived) === archivedOpen).sort((a,b) => Number(Boolean(b.pinned))-Number(Boolean(a.pinned)) || (b.last_active ?? 0)-(a.last_active ?? 0));
+  const searching = Boolean(query) && (searchBusy || searchResult?.query !== query || searchResult.limit !== searchLimit) && searchError?.query !== query;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickerError, setPickerError] = useState("");
@@ -110,15 +136,19 @@ export function HermesSidebar({ sessions, selected, busy, directoryBusy, loading
         {pickerError && <p role="alert">{pickerError}</p>}
       </div>}
     </div>
-    {searchOpen && <input autoFocus className="hermes-session-search" aria-label={ht("搜索会话")} placeholder={ht("搜索会话…")} value={search} onChange={(e) => setSearch(e.target.value)} />}
-    <div className="hermes-session-view-tabs"><button aria-pressed={!archivedOpen} onClick={()=>setArchivedOpen(false)}>{ht("会话")}</button><button aria-pressed={archivedOpen} onClick={()=>setArchivedOpen(true)}>{ht("已归档")}</button></div>
+    {searchOpen && <input autoFocus className="hermes-session-search" aria-label={ht("搜索会话")} placeholder={ht("搜索所有会话与正文…")} maxLength={200} value={search} onChange={(e) => {setSearch(e.target.value);setSearchLimit(20);}} onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation();setSearch("");setSearchOpen(false);}}} />}
+    {!query && <div className="hermes-session-view-tabs"><button aria-pressed={!archivedOpen} onClick={()=>setArchivedOpen(false)}>{ht("会话")}</button><button aria-pressed={archivedOpen} onClick={()=>setArchivedOpen(true)}>{ht("已归档")}</button></div>}
+    {query && <div className="hermes-search-status" role="status">{ht(searching ? "正在搜索全部会话…" : "搜索结果包含归档会话")}</div>}
+    {query && searchError?.query === query && <div className="hermes-search-status" role="alert">{ht(searchError.message)}<button type="button" onClick={()=>{setSearchError(null);setSearchRevision(v=>v+1);}}>{ht("重试")}</button></div>}
     <nav className="hermes-sessions" aria-label={ht("会话")}>
-      {[...sessions].filter(s=>Boolean(s.archived)===archivedOpen && `${s.title ?? ""} ${s.preview ?? ""} ${s.cwd ?? ""}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)) || (b.last_active ?? 0)-(a.last_active ?? 0)).map(s=>
-        <div key={s.id} className={`hermes-session-row ${selected === s.id ? "active" : ""}`}>
-          <button className="hermes-session" disabled={busy || fileActionsBusy} onClick={()=>onSelect(s.id)}>
-            <span>{s.pinned && <span aria-label={ht("已置顶")}>⌖ </span>}{s.title || s.preview || ht("新会话")}</span>
+      {visibleSessions.map(s=>
+        <div key={s.id} className={`hermes-session-row ${query ? "is-search-result" : ""} ${selected === s.id ? "active" : ""}`} data-menu-open={menuId === s.id}>
+          <button className="hermes-session" disabled={busy || fileActionsBusy} onClick={()=>onSelect(s.id, query && !s.draft ? {query} : undefined)}>
+            <span title={s.title || s.preview || ht("新会话")}>{s.pinned && <span aria-label={ht("已置顶")}>⌖ </span>}{s.title || s.preview || ht("新会话")}</span>
             <small>{s.draft ? ht("草稿") : <>{s.last_active ? new Date(s.last_active*1000).toLocaleDateString() + " · " : ""}{ht("{count} 条消息",{count:s.message_count ?? 0})}</>}</small>
             {s.cwd && <small className="hermes-session-project" title={s.cwd}>{s.cwd.split(/[\\/]/).filter(Boolean).at(-1)}{s.git_branch ? ` · ${s.git_branch}` : ""}</small>}
+            {query && s.archived && <small>{ht("已归档")}</small>}
+            {query && s.snippet && <small className="hermes-search-snippet" title={s.snippet}>{s.snippet}</small>}
           </button>
           <div className="hermes-session-row-actions">
             <button aria-label={ht("重命名 {name}",{name:s.title || s.id})} disabled={busy || fileActionsBusy} onClick={()=>onRename(s)}><PencilIcon/></button>
@@ -134,8 +164,10 @@ export function HermesSidebar({ sessions, selected, busy, directoryBusy, loading
           </div>}
         </div>
       )}
-      {!loading && !sessions.some(s=>Boolean(s.archived)===archivedOpen) && <small className="hermes-muted">{ht(archivedOpen ? "暂无归档会话" : "暂无会话")}</small>}
-      {hasMore && <button className="hermes-load-more" disabled={busy || loading} onClick={onLoadMore}>{ht("加载更多会话")}</button>}
+      {!loading && !visibleSessions.length && !searching && searchError?.query !== query && <small className="hermes-muted">{ht(query ? "没有匹配的会话" : archivedOpen ? "暂无归档会话" : "暂无会话")}</small>}
+      {!query && hasMore && <button className="hermes-load-more" disabled={busy || loading} onClick={onLoadMore}>{ht("加载更多会话")}</button>}
+      {query && searchRows.length >= searchLimit && searchLimit < 100 && <button className="hermes-load-more" disabled={searching} onClick={()=>setSearchLimit(value=>Math.min(100,value+20))}>{ht("更多搜索结果")}</button>}
+      {query && searchRows.length >= 100 && <small className="hermes-muted">{ht("已显示 100 个结果，请缩小搜索范围。")}</small>}
     </nav>
     {pickerError && !pickerOpen && !projectMenuOpen && <p className="hermes-project-error" role="alert">{pickerError}</p>}
     <div className="hermes-files-resizer" hidden={!cwd || !filesOpen} {...filesPanel.separatorProps}/><div ref={filesPanel.panelRef} role="region" className={`hermes-files ${filesOpen && cwd ? "" : "is-collapsed"}`} aria-label={ht("文件浏览器")}><div className="hermes-files-toolbar"><button className="hermes-files-heading" aria-expanded={filesOpen && Boolean(cwd)} disabled={fileActionsBusy} onClick={() => requestAction("files")}><ChevronIcon className={filesOpen && cwd ? "is-open" : ""} />{ht("文件浏览器")}</button><button title={ht("打开终端")} aria-label={ht("打开终端")} disabled={fileActionsBusy} onClick={() => requestAction("terminal")}><TerminalIcon /></button><button title={ht("搜索文件")} aria-label={ht("搜索文件")} aria-pressed={filesOpen && fileSearch} disabled={fileActionsBusy} onClick={() => requestAction("search")}><SearchIcon /></button><button title={ht("上传文件")} aria-label={ht("上传文件")} disabled={fileActionsBusy} onClick={() => requestAction("upload")}><UploadIcon /></button><button title={ht("刷新文件")} aria-label={ht("刷新文件")} disabled={fileActionsBusy} onClick={() => requestAction("refresh")}><RefreshIcon /></button></div>

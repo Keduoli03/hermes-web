@@ -114,7 +114,7 @@ const nav = async (label) => {
   if (!await target.isVisible()) await menu.locator(".hermes-settings-menu-group").filter({has:page.getByRole("button", {name:label,exact:true,includeHidden:true})}).locator(".hermes-settings-group-toggle").click();
   await target.click();
 };
-const ready = () => page.getByText("正在读取 Hermes…", { exact: true }).waitFor({ state: "hidden" });
+const ready = () => page.waitForFunction(() => ![...document.querySelectorAll(".config-notice")].some(element => element.textContent?.trim() === "正在读取 Hermes…" && element.getClientRects().length));
 const out = join(tmpdir(), "hermes-web-qa");
 await mkdir(out, { recursive: true });
 try {
@@ -183,13 +183,16 @@ try {
   await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
   await page.screenshot({path:join(out,"session-info.png")});
   await page.getByRole("button",{name:"会话信息与用量",exact:true}).click();
+  await page.locator(".hermes-session-row").filter({has:page.getByRole("button",{name:"会话操作 Markdown test",exact:true})}).hover();
   await page.getByRole("button",{name:"会话操作 Markdown test",exact:true}).click();
   await page.getByRole("button",{name:"置顶",exact:true}).click();
   assert.equal(sessionFlags.pinned,true);
+  await page.locator(".hermes-session-row").filter({has:page.getByRole("button",{name:"会话操作 Markdown test",exact:true})}).hover();
   await page.getByRole("button",{name:"会话操作 Markdown test",exact:true}).click();
   await page.getByRole("button",{name:"归档",exact:true}).click();
   assert.equal(sessionFlags.archived,true);
   await page.getByRole("button",{name:"已归档",exact:true}).click();
+  await page.locator(".hermes-session-row").filter({has:page.getByRole("button",{name:"会话操作 Markdown test",exact:true})}).hover();
   await page.getByRole("button",{name:"会话操作 Markdown test",exact:true}).click();
   await page.getByRole("button",{name:"取消归档",exact:true}).click();
   await page.getByRole("complementary",{name:"会话侧栏",exact:true}).getByRole("button",{name:"会话",exact:true}).click();

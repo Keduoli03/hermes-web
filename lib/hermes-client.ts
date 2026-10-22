@@ -12,6 +12,7 @@ const errorLabels: Record<string, string> = {
 
 export async function hermesApi(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
+  if (init?.cache === "reload") headers.set("X-Hermes-Refresh", "1");
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const response = await fetch(`/api/hermes${path}`, { ...init, headers, cache: "no-store" });
   if (!response.ok) {

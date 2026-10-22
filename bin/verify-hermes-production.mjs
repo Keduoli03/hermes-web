@@ -3,23 +3,41 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { WebSocketServer } from "ws";
+import { tmpdir } from "node:os";
 import { resolve,join } from "node:path";
-import { access } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 const directory=resolve(process.argv[2] || process.cwd());
 await access(join(directory,".next","BUILD_ID"));
 let token="production-fixture-token-one",handshakes=0,writes=0;
 const backend=createServer((request,response)=>{
+  if(request.url==="/v1/models"){
+    response.setHeader("Content-Type","application/json");
+    if(request.headers.authorization!=="Bearer production-fixture-api-key"){response.statusCode=401;response.end('{}');return;}
+    response.end('{"data":[]}');return;
+  }
   if(request.url==="/"){handshakes++;response.setHeader("Content-Type","text/html");response.end(`<script>window.__HERMES_SESSION_TOKEN__=${JSON.stringify(token)};</script>`);return;}
   response.setHeader("Content-Type","application/json");
   if(request.headers["x-hermes-session-token"]!==token){response.statusCode=401;response.end('{"error":"Unauthorized"}');return;}
   if(request.method==="PUT")writes++;
   response.end(JSON.stringify(request.url==="/api/config/schema" ? {fields:{}} : {automatic:true}));
 });
+const websocket=new WebSocketServer({noServer:true});
+backend.on("upgrade",(request,socket,head)=>{
+  if(new URL(request.url,"http://localhost").searchParams.get("token")!==token){socket.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");return;}
+  websocket.handleUpgrade(request,socket,head,client=>websocket.emit("connection",client));
+});
+websocket.on("connection",client=>client.on("message",raw=>{
+  const frame=JSON.parse(raw);assert.equal(frame.method,"gateway.ping");
+  client.send(JSON.stringify({id:frame.id,result:{ok:true}}));
+}));
 backend.listen(0,"127.0.0.1");await once(backend,"listening");
 const reservation=createServer();reservation.listen(0,"127.0.0.1");await once(reservation,"listening");
 const port=reservation.address().port;await new Promise(resolve=>reservation.close(resolve));
 const origin=`http://127.0.0.1:${port}`;
-const env={...process.env,HERMES_DASHBOARD_URL:`http://127.0.0.1:${backend.address().port}`,HERMES_DASHBOARD_SESSION_TOKEN:"",PI_WEB_USERNAME:"fixture-admin",PI_WEB_PASSWORD:"production-fixture-password",HERMES_WEB_OAUTH_CLIENT_ID:"",PI_WEB_ALLOWED_HOSTS:"127.0.0.1,localhost",HERMES_TEST_URL:origin,HERMES_TEST_BROWSER:process.env.HERMES_TEST_BROWSER || "msedge"};
+const authDirectory=await mkdtemp(join(tmpdir(),"hermes-production-auth-"));
+const backendOrigin=`http://127.0.0.1:${backend.address().port}`;
+const env={...process.env,HERMES_WEB_DATA_DIR:authDirectory,HERMES_DASHBOARD_URL:backendOrigin,HERMES_API_SERVER_URL:backendOrigin,API_SERVER_KEY:"production-fixture-api-key",HERMES_DASHBOARD_SESSION_TOKEN:"",PI_WEB_USERNAME:"fixture-admin",PI_WEB_PASSWORD:"production-fixture-password",HERMES_WEB_OAUTH_CLIENT_ID:"",PI_WEB_ALLOWED_HOSTS:"127.0.0.1,localhost",HERMES_TEST_URL:origin,HERMES_TEST_BROWSER:process.env.HERMES_TEST_BROWSER || "msedge"};
 const server=spawn(process.execPath,["node_modules/next/dist/bin/next","start","-H","127.0.0.1","-p",String(port)],{cwd:directory,env,stdio:["ignore","ignore","pipe"],windowsHide:true});
 let diagnostics="";server.stderr.on("data",data=>{diagnostics=(diagnostics+data.toString()).slice(-2000);});
 try{
@@ -43,5 +61,8 @@ try{
   const [code]=await once(runner,"exit");assert.equal(code,0,"production browser suites must pass");
 }finally{
   if(server.exitCode===null){server.kill();await once(server,"exit");}
+  for(const client of websocket.clients)client.terminate();
+  await new Promise(resolve=>websocket.close(resolve));
   backend.closeAllConnections();await new Promise(resolve=>backend.close(resolve));
+  await rm(authDirectory,{recursive:true,force:true});
 }

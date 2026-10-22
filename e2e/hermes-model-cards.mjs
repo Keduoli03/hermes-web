@@ -22,11 +22,15 @@ await page.route("**/api/hermes/**", async route => {
   const body = req.postData() ? JSON.parse(req.postData()) : undefined;
   let data = { ok: true };
   if (req.method() !== "GET") writes.push({ path, body });
-  if (path === "/v1/models") data = { data: [{ id: "hermes-agent" }] };
+  if (path === "/v1/models") data = { data: [{ id: "unrelated-api-first-model" }] };
   else if (path === "/api/sessions") data = { sessions: [] };
   else if (path === "/api/providers/custom-endpoints") data = { endpoints: [{ ...endpoint, is_current: current.provider === endpoint.id }] };
   else if (path === "/api/providers/custom-endpoints/discover") data = { ok: true, models: customModels };
-  else if (path === "/api/model/options") data = { ...current, providers: [{ slug: "deepseek", name: "DeepSeek", models: ["shared-model", "deepseek-reasoner"], is_current: current.provider === "deepseek", authenticated: true, api_url: "https://api.deepseek.com/v1" }, { slug: "anthropic", name: "Anthropic", models: ["claude-fixture"], key_env: "ANTHROPIC_API_KEY", authenticated: true }, { slug: "custom-fixture", name: "自定义接口", is_user_defined: true, models: customModels }] };
+  else if (path === "/api/model/options") {
+    assert.equal(url.searchParams.get("explicit_only"), "1");
+    await new Promise(resolve=>setTimeout(resolve,200));
+    data = { ...current, providers: [{ slug: "deepseek", name: "DeepSeek", models: ["shared-model", "deepseek-reasoner"], is_current: current.provider === "deepseek", authenticated: true, api_url: "https://api.deepseek.com/v1" }, { slug: "anthropic", name: "Anthropic", models: ["claude-fixture"], key_env: "ANTHROPIC_API_KEY", authenticated: true }, { slug: "custom-fixture", name: "自定义接口", is_user_defined: true, models: customModels }] };
+  }
   else if (path === "/api/providers/oauth") data = { providers: [] };
   else if (path === "/api/model/set") { current = { provider: body.provider, model: body.model }; }
   await route.fulfill({ json: data });
@@ -38,6 +42,7 @@ try {
   await page.getByRole("navigation", { name: "工作区设置", exact: true }).getByRole("button", { name: "模型", exact: true }).click();
   const cards = page.locator(".hermes-model-card");
   await page.getByRole("region", { name: "DeepSeek", exact: true }).waitFor();
+  assert.equal(await page.locator(".hermes-model-current strong").textContent(), "shared-model");
   assert.equal(await cards.count(), 3);
   assert.equal(await page.locator(".hermes-models-config .config-sidebar").count(), 0);
   await page.screenshot({ path: join(out, "model-cards-desktop.png") });
@@ -50,6 +55,11 @@ try {
   await listbox.getByRole("option", { name: "shared-model", exact: true }).click();
   await custom.locator(".is-current").waitFor();
   assert.equal(writes.filter(row => row.path === "/api/model/set").length, 0);
+  await page.reload();
+  await page.getByRole("navigation", { name: "工作区设置", exact: true }).getByRole("button", { name: "模型", exact: true }).click();
+  await custom.locator(".is-current").waitFor();
+  assert.equal(await page.locator(".hermes-model-current strong").textContent(), "shared-model");
+  assert.equal(current.provider,"deepseek","Conversation choice does not change global defaults");
   await custom.getByRole("button", { name: "fixture-model-5", exact: true }).click();
   await custom.getByRole("button", { name: "设为默认", exact: true }).click();
   await page.getByText("默认模型已更新", { exact: true }).waitFor();

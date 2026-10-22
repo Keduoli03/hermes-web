@@ -1,5 +1,8 @@
 # Models and provider auth
 
+- Hermes pending model picks are browser-persisted per stored session/draft; unsent new-chat picks have a separate preference. Restore that choice before the saved session metadata, and use `/api/model/options`'s configured model/provider on cold start, never the first `/v1/models` entry. Promote the chosen provider/model to the durable session when a run is accepted; after successful completion remove its pending override so the actual persisted session route (including automatic provider resolution) takes over. Only the explicit default action changes Hermes' global default.
+- Both initial and refreshed Hermes catalogs use `explicit_only=1`, and the overview waits for endpoints and catalog before publishing a complete snapshot. Merge the saved custom models with the matching catalog provider instead of dropping discovered models when deduplicating cards. Successful saved-endpoint discovery is retained in the server metadata cache, bound to backend/token, profile, endpoint id, URL and protocol.
+
 - Hermes model management opens a provider card grid instead of a second provider sidebar. Card dropdowns reuse ModelSelector with an optional 320px menu-height cap; the default behavior of chat selectors is unchanged. Choosing a model or a model tag changes the current conversation selection and carries its provider id through HermesSettingsDialog to HermesChat. Only the explicit default action calls `/api/model/set`, retaining expensive-model confirmation. Custom model refresh uses the server-only discovery adapter; editing opens the existing guarded form with a back button. Card metadata comes from official model options and saved endpoints, not guessed URLs or credentials.
 
 ## Model defaults for new sessions

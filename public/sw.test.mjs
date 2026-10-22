@@ -181,11 +181,25 @@ test("install precaches offline assets but not the runtime manifest", async () =
 
   assert.deepEqual(precached, [
     "/offline.html",
-    "/icons/icon-192.png",
-    "/icons/icon-512.png",
-    "/icons/apple-touch-icon.png",
+    "/icons/hermes-icon-192.png",
+    "/icons/hermes-icon-512.png",
+    "/icons/hermes-apple-touch-icon.png",
   ]);
   assert.equal(skipped, true);
+});
+
+test("activation removes legacy Pi icon caches without deleting unrelated application caches", async () => {
+  const removed = [];
+  let pending, claimed = false;
+  globalThis.caches = {
+    keys: async () => ["pi-web-static-old", "hermes-web-static-old", "hermes-web-static-test-hermes-avatar-1", "other-app-static"],
+    delete: async key => { removed.push(key); return true; },
+  };
+  self.clients = { claim: async () => { claimed = true; } };
+  listeners.get("activate")({waitUntil:promise=>{pending=promise;}});
+  await pending;
+  assert.deepEqual(removed,["pi-web-static-old","hermes-web-static-old"]);
+  assert.equal(claimed,true);
 });
 
 test("manifest requests bypass the worker even with query strings and old cached entries", async () => {

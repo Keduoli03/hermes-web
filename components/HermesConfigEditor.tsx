@@ -28,7 +28,7 @@ export function HermesConfigEditor({ onDirtyChange, allowedCategories, category:
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError("");
     Promise.all([
-      hermesJson<ConfigSchema>("/api/config/schema", { signal: controller.signal }),
+      hermesJson<ConfigSchema>("/api/config/schema", { signal: controller.signal, ...(revision ? { cache: "reload" } : {}) }),
       hermesJson<Record<string, unknown>>("/api/config", { signal: controller.signal }),
       hermesJson<{ yaml: string; path?: string }>("/api/config/raw", { signal: controller.signal }),
     ]).then(([nextSchema, config, raw]) => {

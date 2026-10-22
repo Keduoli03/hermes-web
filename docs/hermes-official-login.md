@@ -68,6 +68,13 @@ computer cannot use your server's loopback address.
 
 ## Session Behavior
 
+Password and official login now share the private panel-session store and opaque
+`web.*` cookie identifiers. Logout revokes either method's session immediately.
+After upgrading, existing stateless `v1.*` password cookies require one new login;
+existing `nous.*` official sessions retain their original expiry. Persist
+`HERMES_WEB_DATA_DIR` for both login methods. See
+[Architecture](hermes-architecture.md) for ownership and compatibility details.
+
 - Authorization code + PKCE S256 and one-use state, bound to an HttpOnly cookie,
   with a 10-minute deadline. Only the official Portal issuer is accepted.
 - JWT verification uses `jose` and official JWKS, RS256 only, checks issuer,

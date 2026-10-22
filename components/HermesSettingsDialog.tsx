@@ -78,7 +78,7 @@ export function HermesSettingsDialog({ section, onSectionChange, onClose, onDirt
   models: string[];
   model: string;
   modelProvider?: string;
-  onModelChange: (model: string, provider?: string) => void;
+  onModelChange: (model: string, provider?: string, asDefault?: boolean) => void;
   modelBusy: boolean;
 }) {
   const { ht } = useHermesI18n();

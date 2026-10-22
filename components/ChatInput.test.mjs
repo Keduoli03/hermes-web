@@ -14,7 +14,7 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, RUN_END_CLICK_GUARD_MS, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, isRunEndStrayClick, modelSupportsImageInput, offersBuiltinSlashCommandWhileStreaming, replaceLinksWithMarkdown, replaceTextareaRange, shouldCompressImageFile, submitsSlashCommandOnEnter } = await jiti.import("./ChatInput.tsx");
 const { isBareMcpCommand } = await jiti.import("@/lib/mcp-command.ts");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
-const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts");
+const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = jiti("@/lib/draft-store");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 test("preserves pasted HTML links as Markdown without changing plain text layout", () => {
@@ -663,7 +663,7 @@ function chatInputCallback(name, context) {
   }
   return new Script(ts.transpileModule(findCallback(source).getText(source), {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText).runInNewContext(context);
+  }).outputText).runInNewContext({ builtinCommands: undefined, submissionDisabled: false, ...context });
 }
 
 test("while a run streams, a bare /mcp opens Settings or is queued as before", async () => {
@@ -697,6 +697,19 @@ test("while a run streams, a bare /mcp opens Settings or is queued as before", a
   assert.deepEqual(await run("/mcp", true, { images: [{}] }), { builtin: [], prompts: [["/mcp", "steer", 1]], cleared: 1 });
   // The composer's own built-ins are unchanged.
   assert.deepEqual(await run("/copy", true), { builtin: ["/copy"], prompts: [], cleared: 0 });
+});
+
+test("alternate command catalogues control streaming availability and an upload lock preserves input", async () => {
+  const commands = [{name:"peek",source:"builtin",description:"",availableWhileStreaming:true}];
+  assert.equal(canRunBuiltinSlashCommandWhileStreaming("/peek", commands), true);
+  assert.equal(canRunBuiltinSlashCommandWhileStreaming("/copy", commands), false);
+  let sent = false, cleared = false;
+  const send = chatInputCallback("handleSend", {
+    submissionDisabled: true,
+    clearInput() { cleared = true; }, onSend() { sent = true; },
+  });
+  await send();
+  assert.equal(sent, false); assert.equal(cleared, false);
 });
 
 test("handleSend lets a handled /mcp through while streaming and sends an unowned one when idle", async () => {

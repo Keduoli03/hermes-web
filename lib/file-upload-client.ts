@@ -31,12 +31,15 @@ export function uploadFiles(
   files: File[],
   strategy: UploadConflictStrategy,
   onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
 ): Promise<{ status: number; data: UploadResponse }> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file, file.name));
 
     const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    const cleanup = () => signal?.removeEventListener("abort", abort);
     xhr.open(
       "POST",
       `/api/files/${encodeFilePathForApi(targetDirectory)}?type=upload&conflict=${strategy}`,
@@ -46,9 +49,10 @@ export function uploadFiles(
         onProgress(Math.round((event.loaded / event.total) * 100));
       }
     };
-    xhr.onerror = () => reject(new Error("Network error while uploading files"));
-    xhr.onabort = () => reject(new Error("Upload cancelled"));
+    xhr.onerror = () => { cleanup(); reject(new Error("Network error while uploading files")); };
+    xhr.onabort = () => { cleanup(); reject(new Error("Upload cancelled")); };
     xhr.onload = () => {
+      cleanup();
       let data: UploadResponse = {};
       try {
         data = JSON.parse(xhr.responseText) as UploadResponse;
@@ -57,6 +61,8 @@ export function uploadFiles(
       }
       resolve({ status: xhr.status, data });
     };
+    if (signal?.aborted) { reject(new Error("Upload cancelled")); return; }
+    signal?.addEventListener("abort", abort, { once: true });
     xhr.send(formData);
   });
 }

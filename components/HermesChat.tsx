@@ -3,7 +3,7 @@
 import { useHermesI18n } from "@/hooks/useHermesI18n";
 
 import { useCallback, useMemo, useEffect, useEffectEvent, useRef, useState, type CSSProperties } from "react";
-import { hermesApi as api } from "@/lib/hermes-client";
+import { hermesChat } from "@/lib/hermes-chat-client";
 import { HermesSessionInfo, HermesSessionUsageButton, type HermesSessionDetail } from "./HermesSessionInfo";
 import { HermesSystemPrompt } from "./HermesSystemPrompt";
 import { FileText } from "lucide-react";
@@ -13,7 +13,7 @@ import { ChatInput, type AttachedImage, type ChatInputHandle } from "./ChatInput
 import { HermesRightPanel, type HermesRightPanelHandle } from "./HermesRightPanel";
 import { HermesActivityRail, type HermesWorkspaceView } from "./HermesActivityRail";
 import { HermesWorkspacePage } from "./HermesWorkspacePage";
-import { hermesJson } from "@/lib/hermes-client";
+import { hermesApi as api, hermesJson } from "@/lib/hermes-client";
 import { PencilIcon } from "./SidebarIcons";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import type { AgentMessage } from "@/lib/types";
@@ -30,7 +30,19 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { loadCurrentHermesProject, rememberHermesProject } from "@/lib/hermes-project-preferences";
 import { readHermesRun, rememberRun, rememberedRun, type RunRecord } from "@/lib/hermes-run-stream";
+import { listHermesConversations } from "@/lib/hermes-conversations";
+import { loadHermesModelSelection, rememberHermesModelSelection, forgetHermesModelSelection, sessionHermesModelSelection, type HermesModelSelection } from "@/lib/hermes-model-preferences";
+import { hermesModelOptionsPath, hermesEndpointModels, sameHermesProvider, type HermesModelEndpoint, type HermesModelOptions } from "@/lib/hermes-model-catalog";
 import { HermesClarify, type ClarifyRequest } from "./HermesClarify";
+import { HermesAvatar } from "./HermesAvatar";
+import { HERMES_COMMANDS, runHermesCommand } from "@/lib/hermes-commands";
+import { matchesHermesSearch, type HermesSearchMatch } from "@/lib/hermes-search";
+import { useHermesAttachments } from "@/hooks/useHermesAttachments";
+import { useDragDrop } from "@/hooks/useDragDrop";
+import { DirectoryPicker } from "./DirectoryPicker";
+import { copyText } from "@/lib/clipboard";
+import { buildAtMentionText } from "@/lib/file-fuzzy";
+import { RefreshCw, X } from "lucide-react";
 
 type HermesSession = HermesSessionRow;
 type ThinkingLevel = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -38,13 +50,6 @@ type ChatMessage = HermesChatMessage;
 type RunEvent = { event?: string; run_id?: string; session_id?: string; delta?: string; text?: string; reasoning?: string; tools?: string[]; clarify?: ClarifyRequest | null; request_id?: string; output?: string; status?: string; tool?: string; preview?: string; error?: string; approval?: { request_id?: string; command?: string; description?: string; choices?: string[] } };
 
 const revealRenderedHistory = () => {};
-
-async function projectRequest<T>(action: "project" | "chat", body: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/hermes-session/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Hermes 项目操作失败。");
-  return result as T;
-}
 
 export function HermesChat() {
   return <I18nProvider initialLocale="zh-CN" storageKey="hermes-web-locale"><HermesWorkspace /></I18nProvider>;
@@ -74,6 +79,7 @@ function HermesWorkspace() {
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
   const [modelCatalog,setModelCatalog]=useState<{id:string;name:string;provider:string;input?:string[]}[]>([]);
   const [modelProvider,setModelProvider]=useState("");
+  const defaultModelRef = useRef<HermesModelSelection>({ model: "hermes-agent", provider: "" });
   const [models, setModels] = useState<string[]>([]);
   const [managementDirty, setManagementDirty] = useState(false);
   const [sessionActionBusy,setSessionActionBusy]=useState(false);
@@ -95,7 +101,10 @@ function HermesWorkspace() {
   const selectedRef=useRef<string|null>(null);
   const detailSessionRef=useRef<string|null>(null);
   const [sessions, setSessions] = useState<HermesSession[]>([]);
+  const [sessionsRevision, setSessionsRevision] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [searchFocus, setSearchFocus] = useState<{ index: number; query: string } | null>(null);
+  const attachmentBusyRef = useRef(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<HermesSessionRow[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
@@ -110,10 +119,8 @@ function HermesWorkspace() {
       if(controller.signal.aborted)return;
       setDetail(data);setDetailOwner(selected);
       if(detailSessionRef.current!==selected){
-        if(data.model)setModelName(data.model);
-        let config:Record<string,unknown>={};
-        try{config=typeof data.model_config === "string" ? JSON.parse(data.model_config) : data.model_config ?? {};}catch{}
-        setModelProvider(typeof config.provider === "string" ? config.provider : data.billing_provider ?? "");
+        const choice = loadHermesModelSelection(selected) ?? sessionHermesModelSelection(data);
+        if (choice) applyModelSelection(choice);
         detailSessionRef.current=selected;
       }
     }).catch(e=>{if(!controller.signal.aborted)setInfoError(e.message);});
@@ -128,6 +135,17 @@ function HermesWorkspace() {
   const [clarify, setClarify] = useState<ClarifyRequest | null>(null);
   const restoreRunRef = useRef<() => Promise<void>>(async () => {});
   const [modelName, setModelName] = useState("hermes-agent");
+  function applyModelSelection(choice: HermesModelSelection) {
+    setModelName(choice.model); setModelProvider(choice.provider);
+  }
+  function changeModel(model: string, provider = "", asDefault = false) {
+    if (busy || compacting || loading) return;
+    const choice = { model, provider: provider === "hermes" ? "" : provider };
+    rememberHermesModelSelection(selected ?? activeDraftId, choice);
+    if (asDefault) defaultModelRef.current = choice;
+    if (asDefault || !selected) rememberHermesModelSelection(null, choice);
+    applyModelSelection(choice);
+  }
   const streamRef = useRef<AbortController | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const projectRunRef = useRef(false);
@@ -155,23 +173,35 @@ function HermesWorkspace() {
   };
 
   const refreshSessions = useCallback(async () => {
-    const response = await api(`/api/sessions?limit=50&archived=include&order=recent&offset=0`);
-    const data = await response.json() as { sessions?: HermesSession[]; total?:number };
-    setSessions(data.sessions ?? []);setSessionTotal(data.total ?? data.sessions?.length ?? 0);
+    const data = await listHermesConversations<HermesSession>();
+    setSessions(data.sessions ?? []);setSessionTotal(data.total ?? data.sessions?.length ?? 0);setSessionsRevision(value=>value+1);
   }, []);
 
-  const loadMoreSessions = async()=>{try{const data=await hermesJson<{sessions:HermesSession[];total:number}>(`/api/sessions?limit=50&archived=include&order=recent&offset=${sessions.length}`);setSessions(previous=>[...new Map([...previous,...data.sessions].map(row=>[row.id,row])).values()]);setSessionTotal(data.total);}catch(e){setError(e instanceof Error?e.message:String(e));}};
+  const loadMoreSessions = async()=>{try{const data=await listHermesConversations<HermesSession>(sessions.length);setSessions(previous=>[...new Map([...previous,...data.sessions].map(row=>[row.id,row])).values()]);setSessionTotal(data.total);}catch(e){setError(e instanceof Error?e.message:String(e));}};
   const updateSessionFlag = async(session:HermesSessionRow,flag:"pinned"|"archived")=>{if(sessionActionBusy)return;setSessionActionBusy(true);try{await hermesJson(`/api/sessions/${encodeURIComponent(session.id)}`,{method:"PATCH",body:JSON.stringify({[flag]:!session[flag]})});await refreshSessions();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setSessionActionBusy(false);}};
   const compactSession = async()=>{
-    if(!selected || busy || compacting || loading)return;
+    if(!selected || busy || compacting || loading || attachmentBusyRef.current)return false;
     setCompacting(true);setError("");setCompactNotice("");
     const controller=new AbortController();compactRef.current=controller;
     try{const response=await fetch("/api/hermes-session/compact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:selected}),signal:controller.signal});const result=await response.json();if(!response.ok)throw new Error(result.error || ht("压缩失败"));
       const latest=await hermesJson<{session_id?:string}>(`/api/sessions/${encodeURIComponent(selected)}/latest-descendant`);
-      compactRef.current=null;await openSession(latest.session_id ?? selected);setInfoRevision(v=>v+1);await refreshSessions();setCompactNotice(ht("压缩完成：{before} → {after} 个令牌",{before:result.before_tokens ?? "—",after:result.after_tokens ?? "—"}));
-    }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:String(e));else setCompactNotice(ht("已请求停止压缩，请刷新会话确认结果。"));}finally{setCompacting(false);compactRef.current=null;}
+      compactRef.current=null;await openSession(latest.session_id ?? selected);setInfoRevision(v=>v+1);await refreshSessions();setCompactNotice(ht("压缩完成：{before} → {after} 个令牌",{before:result.before_tokens ?? "—",after:result.after_tokens ?? "—"}));return true;
+    }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:String(e));else setCompactNotice(ht("已请求停止压缩，请刷新会话确认结果。"));return false;}finally{setCompacting(false);compactRef.current=null;}
   };
-  useEffect(()=>{const controller=new AbortController();hermesJson<{providers:{slug:string;models?:string[]}[]}>("/api/model/options",{signal:controller.signal}).then(data=>{if(!controller.signal.aborted)setModelCatalog((data.providers ?? []).flatMap(provider=>(provider.models ?? []).map(id=>({id,name:id,provider:provider.slug,input:["text","image"]}))));}).catch(()=>{});return()=>controller.abort();},[page]);
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([
+      hermesJson<HermesModelOptions>(hermesModelOptionsPath(), { signal: controller.signal }),
+      hermesJson<{ endpoints: HermesModelEndpoint[] }>("/api/providers/custom-endpoints", { signal: controller.signal }).catch(() => ({ endpoints: [] })),
+    ]).then(([options, saved]) => {
+      if (controller.signal.aborted) return;
+      setModelCatalog([
+        ...saved.endpoints.flatMap(endpoint => hermesEndpointModels(endpoint, options.providers ?? []).map(id => ({ id, name: id, provider: endpoint.id, input: ["text", "image"] }))),
+        ...(options.providers ?? []).filter(provider => !saved.endpoints.some(endpoint => sameHermesProvider(endpoint.id, provider.slug))).flatMap(provider => (provider.models ?? []).map(id => ({ id, name: id, provider: provider.slug, input: ["text", "image"] }))),
+      ]);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [page]);
   const bootTranslation = useEffectEvent((message: string) => ht(message));
   useEffect(() => {
     let alive = true;
@@ -182,18 +212,20 @@ function HermesWorkspace() {
         return { data: info.model ? [{ id: info.model }] : [], dashboardOnly: true };
       }),
       refreshSessions(),
-    ]).then(async ([system, models]) => {
+      hermesJson<HermesModelOptions>(hermesModelOptionsPath()).catch(() => null),
+    ]).then(async ([system, models, , defaults]) => {
       if (!alive) return;
       const first = models.data?.[0]?.id;
       setModels((models.data ?? []).map((model: { id: string }) => model.id));
-      if (first) setModelName(first);
+      defaultModelRef.current = { model: defaults?.model || first || "hermes-agent", provider: defaults?.provider ?? "" };
+      applyModelSelection(loadHermesModelSelection(null) ?? defaultModelRef.current);
       const sessionParam=new URLSearchParams(location.search).get("session");if(sessionParam)await openSessionRef.current(sessionParam);
       setStatus(`Hermes ${system.version ?? ""} · ${bootTranslation(models.dashboardOnly ? "管理服务已连接" : "接口已连接")}`);
       setError(models.dashboardOnly ? bootTranslation("普通聊天尚未配置接口服务；选择项目文件夹后可通过 Hermes 桌面服务聊天。") : "");
       const savedProject = loadCurrentHermesProject();
       if (!sessionParam && !rememberedRun() && savedProject) {
         try {
-          const project = await projectRequest<{cwd:string;branch?:string;mapped?:boolean}>("project", {cwd:savedProject});
+          const project = await hermesChat.bindProject<{cwd:string;branch?:string;mapped?:boolean}>({cwd:savedProject});
           if (!alive) return;
           setCwd(project.cwd);setProjectBranch(project.branch ?? "");setMappedProject(Boolean(project.mapped));
           rememberHermesProject(project.cwd);
@@ -213,13 +245,13 @@ function HermesWorkspace() {
     if (!loading && followTailRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, loading]);
 
-  const openSession = useCallback(async (id: string) => {
-    if (streamRef.current || compactRef.current || projectBusyRef.current) return;
+  const openSession = useCallback(async (id: string, match?: HermesSearchMatch) => {
+    if (streamRef.current || compactRef.current || projectBusyRef.current || attachmentBusyRef.current) return;
     if (managementDirty && !window.confirm(ht("放弃未保存的修改？"))) return;
     setManagementDirty(false);
     historyRef.current?.abort();
     const controller = new AbortController(); historyRef.current = controller;
-    followTailRef.current=true;
+    followTailRef.current=!match;setSearchFocus(null);
     setPage(null); setWorkspaceView("home"); setSidebarOpen(false); setSystemOpen(false);
     history.replaceState(null,"",`?session=${encodeURIComponent(id)}`);setInfoOpen(false);setThinking("auto"); setCompactNotice("");setSelected(id);setActiveDraftId(null); setBusy(false); setApproval(null); setTools([]); setError("");
     setLoading(true);
@@ -227,13 +259,26 @@ function HermesWorkspace() {
     let historyLoaded = false;
     try {
       const [response, session] = await Promise.all([
-        api(`/api/sessions/${encodeURIComponent(id)}/messages?limit=100&order=latest`, { signal: controller.signal }),
+        api(`/api/sessions/${encodeURIComponent(id)}/messages?${match ? "limit=500&order=oldest&include_compacted=true&offset=0" : "limit=100&order=latest"}`, { signal: controller.signal }),
         hermesJson<HermesSessionDetail>(`/api/sessions/${encodeURIComponent(id)}`, { signal: controller.signal }),
       ]);
       const body = await response.json() as { messages?: Record<string, unknown>[] };
-      const rows = hermesChatMessages(body.messages ?? []);
+      const history = [...(body.messages ?? [])];
+      if (match && history.length === 500) {
+        for (let offset = 500; ; offset += 500) {
+          const page = await hermesJson<{messages?:Record<string,unknown>[]}>(`/api/sessions/${encodeURIComponent(id)}/messages?limit=500&order=oldest&include_compacted=true&offset=${offset}`, {signal:controller.signal});
+          history.push(...(page.messages ?? []));
+          if ((page.messages?.length ?? 0) < 500) break;
+        }
+      }
+      const rows = hermesChatMessages(history);
       if (controller.signal.aborted) return;
       setMessages(rows);
+      if (match) {
+        const index = rows.findIndex(row => matchesHermesSearch(row.text, match.query));
+        if (index >= 0) setSearchFocus({ index, query: match.query });
+        else setCompactNotice(ht("已打开会话，未在当前历史中定位到匹配消息。"));
+      }
       historyLoaded = true;
       if (session.cwd) {
         const validation = await fetch("/api/cwd/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd: session.cwd, hermes: true }), signal: controller.signal });
@@ -250,16 +295,21 @@ function HermesWorkspace() {
   }, [managementDirty, ht]);
 
   useEffect(()=>{openSessionRef.current=openSession;},[openSession]);
+  useEffect(() => {
+    if (!searchFocus || loading) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.querySelector("[data-search-match=true]")?.scrollIntoView({ block: "center" }));
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocus, loading]);
 
   const changeProjectDirectory = async (path: string | null) => {
-    if (projectBusyRef.current || streamRef.current || compactRef.current || loading) throw new Error(ht("请等待当前操作完成后再切换项目文件夹。"));
+    if (projectBusyRef.current || streamRef.current || compactRef.current || loading || attachmentBusyRef.current) throw new Error(ht("请等待当前操作完成后再切换项目文件夹。"));
     if (!path) {
       if (selected) throw new Error(ht("已有会话需要选择有效的项目文件夹。"));
       setCwd(null); setProjectBranch(""); setDirectoryUnavailable(false); setMappedProject(false); rememberHermesProject(null); return;
     }
     projectBusyRef.current = true; setProjectBusy(true);
     try {
-      const result = await projectRequest<{ cwd: string; branch?: string; mapped?: boolean }>("project", { cwd: path, ...(selected ? { session_id: selected } : {}) });
+      const result = await hermesChat.bindProject<{ cwd: string; branch?: string; mapped?: boolean }>({ cwd: path, ...(selected ? { session_id: selected } : {}) });
       setCwd(result.cwd); setProjectBranch(result.branch ?? ""); setDirectoryUnavailable(false); setMappedProject(Boolean(result.mapped));
       rememberHermesProject(result.cwd);
       if (activeDraftId) setDrafts(previous => previous.map(draft => draft.id === activeDraftId ? {...draft,cwd:result.cwd,git_branch:result.branch} : draft));
@@ -268,17 +318,16 @@ function HermesWorkspace() {
     } finally { projectBusyRef.current = false; setProjectBusy(false); }
   };
 
-  const consumeRun = useCallback(async (response: Response, controller: AbortController, run: RunRecord, progress?: (text: string) => void) => {
+  const consumeRun = useCallback(async (response: Response, controller: AbortController, run: RunRecord, progress?: (text: string) => void, modelSelection?: HermesModelSelection) => {
     let text = "", failure = "", terminal = false, promoted = false;
     const showText = (reasoning?: string) => {
       progress?.(text);
       setMessages(old => old.map((message, index) => index === old.length - 1 ? { ...message, text, ...(reasoning === undefined ? {} : { reasoning }) } : message));
     };
-    await readHermesRun<RunEvent>(response, controller.signal, cursor => run.project
-      ? fetch(`/api/hermes-session/chat?run_id=${encodeURIComponent(run.runId)}`, { signal: controller.signal, headers: { "Last-Event-ID": cursor } })
-      : api(`/v1/runs/${encodeURIComponent(run.runId)}/events`, { signal: controller.signal, headers: { "Last-Event-ID": cursor } }), event => {
-      if (event.run_id) run.runId = event.run_id;
+    await readHermesRun<RunEvent>(response, controller.signal, cursor => hermesChat.observe(run, controller.signal, cursor), event => {
+      if (event.run_id) { run.runId = event.run_id; progress?.(text); }
       if (event.session_id) {
+        if (modelSelection) rememberHermesModelSelection(event.session_id, modelSelection);
         run.sessionId = event.session_id; setSelected(event.session_id); history.replaceState(null, "", `?session=${encodeURIComponent(event.session_id)}`);
         if (activeDraftId && !promoted) {
           promoted = true;
@@ -305,7 +354,10 @@ function HermesWorkspace() {
         if (event.output !== undefined) { text = event.output; showText(); }
       }
     }, () => setStatus(ht("连接已断开，正在恢复…")));
-    if (terminal) rememberRun(null);
+    if (terminal) {
+      rememberRun(null);
+      if (!failure && run.sessionId) forgetHermesModelSelection(run.sessionId);
+    }
     if (failure) throw new Error(failure);
     return text;
   }, [ht, activeDraftId, drafts]);
@@ -322,7 +374,7 @@ function HermesWorkspace() {
       setBusy(true); setLoading(false); setError("");
       setMessages(old => old.at(-1)?.role === "assistant" ? old : [...old, { role: "assistant", text: "" }]);
       try {
-        const response = run.project ? await fetch(`/api/hermes-session/chat?run_id=${encodeURIComponent(run.runId)}`, { signal: controller.signal }) : await api(`/v1/runs/${encodeURIComponent(run.runId)}/events`, { signal: controller.signal });
+        const response = await hermesChat.observe(run, controller.signal);
         if (response.status === 404) { rememberRun(null); throw new Error(ht("运行恢复记录已过期，已显示保存的会话。")); }
         await consumeRun(response, controller, run); setStatus(ht("Hermes 就绪")); await refreshSessions();
       } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : String(error)); }
@@ -332,32 +384,26 @@ function HermesWorkspace() {
 
   const send = useCallback(async (inputText: string, images?: AttachedImage[]) => {
     const prompt = inputText.trim();
-    if ((!prompt && !images?.length) || busy || loading || streamRef.current || projectBusyRef.current || directoryUnavailable) { chatInputRef.current?.restoreSubmission(prompt, images); return; }
+    if (images?.length && /^\/[A-Za-z][A-Za-z0-9-]*(?:\s|$)/.test(prompt)) {
+      setError(ht("命令不能与图片附件一起发送，请先移除图片。")); chatInputRef.current?.restoreSubmission(prompt, images); return;
+    }
+    if ((!prompt && !images?.length) || busy || loading || streamRef.current || projectBusyRef.current || directoryUnavailable || attachmentBusyRef.current) { chatInputRef.current?.restoreSubmission(prompt, images); return; }
     const draftTitle=drafts.find(draft=>draft.id===activeDraftId)?.title;
-    setError(""); setBusy(true); setTools([]); setApproval(null); setClarify(null);
+    setError(""); setSearchFocus(null); setBusy(true); setTools([]); setApproval(null); setClarify(null);
     followTailRef.current=true;
     setMessages((old) => [...old, { role: "user", text: prompt, images: images?.map(({ data, mimeType }) => ({ data, mimeType })) }, { role: "assistant", text: "" }]);
     const controller = new AbortController(); streamRef.current = controller;
-    let runId = ""; let finalOutput = ""; let deltaText = ""; let runStarted = false;
+    let finalOutput = ""; let deltaText = ""; let runStarted = false;
     try {
-      const input = images?.length ? [{ role: "user", content: [{ type: "text", text: prompt }, ...images.map((image) => ({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }))] }] : prompt;
       projectRunRef.current = Boolean(cwd);
-      let eventsResponse: Response;
-      if (cwd) {
-        eventsResponse = await fetch("/api/hermes-session/chat", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ cwd, text: prompt, model: modelName, provider: modelProvider, thinking, ...(selected ? { session_id: selected } : {}), images: images?.map((image, index) => ({ data: image.data, mimeType: image.mimeType, filename: `attachment-${index}.${image.mimeType.split("/")[1] || "png"}` })) }) });
-        if (!eventsResponse.ok) { const result = await eventsResponse.json(); throw new Error(result.error || ht("运行失败")); }
-      } else {
-        const response = await api("/v1/runs", { method: "POST", signal: controller.signal, body: JSON.stringify({ input, model: modelName, ...(modelProvider ? {provider:modelProvider}:{}), ...(thinking === "auto" ? {} : {model_options:{reasoning_effort:thinking === "off" ? "none" : thinking}}), ...(selected ? { session_id: selected } : {}) }) });
-        const created = await response.json() as { run_id: string; session_id?: string };
-        runId = created.run_id;
+      const { response: eventsResponse, run: record } = await hermesChat.start({ text: prompt, cwd, model: modelName, provider: modelProvider, thinking, sessionId: selected, images }, controller.signal, run => {
         runStarted = true;
-        activeRunIdRef.current = runId;
-        rememberRun({ runId, sessionId: created.session_id ?? created.run_id, project: false });
-        if (!selected) setSelected(created.session_id ?? created.run_id);
-        eventsResponse = await api(`/v1/runs/${encodeURIComponent(runId)}/events`, { headers: { Accept: "text/event-stream" }, signal: controller.signal });
-      }
-      const record = { runId, sessionId: selected ?? runId, project: Boolean(cwd) };
-      finalOutput = await consumeRun(eventsResponse, controller, record, text => { deltaText = text; runStarted = true; });
+        activeRunIdRef.current = run.runId;
+        rememberRun(run);
+        rememberHermesModelSelection(run.sessionId, { model: modelName, provider: modelProvider });
+        if (!selected) setSelected(run.sessionId);
+      });
+      finalOutput = await consumeRun(eventsResponse, controller, record, text => { deltaText = text; runStarted = true; }, { model: modelName, provider: modelProvider });
       const answer = finalOutput || deltaText;
       if (answer) setMessages((old) => old.map((m, i) => i === old.length - 1 ? { ...m, text: answer } : m));
       if (draftTitle && draftTitle!==ht("新会话")) {
@@ -377,7 +423,7 @@ function HermesWorkspace() {
   const stop = useCallback(async () => {
     const runId = activeRunIdRef.current;
     if (runId) {
-      try { if (projectRunRef.current) await projectRequest("chat", { action: "stop", run_id: runId }); else await api(`/v1/runs/${encodeURIComponent(runId)}/stop`, { method: "POST", body: JSON.stringify({}) }); }
+      try { await hermesChat.stop({ runId, project: projectRunRef.current }); }
       catch (e) { setError(e instanceof Error ? e.message : String(e)); return; }
     }
     rememberRun(null); streamRef.current?.abort();
@@ -386,8 +432,7 @@ function HermesWorkspace() {
   const respondApproval = useCallback(async (choice: "once" | "deny") => {
     if (!approval) return;
     try {
-      if (projectRunRef.current) await projectRequest("chat", { action: "approval", run_id: approval.runId, choice, request_id: approval.requestId });
-      else await api(`/v1/runs/${encodeURIComponent(approval.runId)}/approval`, { method: "POST", body: JSON.stringify({ choice, ...(approval.requestId ? { request_id: approval.requestId } : {}) }) });
+      await hermesChat.approve({ runId: approval.runId, project: projectRunRef.current }, choice, approval.requestId);
       setApproval(null);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, [approval]);
@@ -395,30 +440,32 @@ function HermesWorkspace() {
   const resetChat = () => {
     setManagementDirty(false);historyRef.current?.abort();setPage(null);setWorkspaceView("home");setSidebarOpen(false);
     history.replaceState(null,"",location.pathname);setSelected(null);setActiveDraftId(null);setInfoOpen(false);setSystemOpen(false);
-    setThinking("auto");setMessages([]);setBusy(false);setLoading(false);setDirectoryUnavailable(false);setTools([]);setApproval(null);setClarify(null);setError("");setCompactNotice("");
+    applyModelSelection(loadHermesModelSelection(null) ?? defaultModelRef.current);
+    setThinking("auto");setMessages([]);setSearchFocus(null);setBusy(false);setLoading(false);setDirectoryUnavailable(false);setTools([]);setApproval(null);setClarify(null);setError("");setCompactNotice("");
   };
   const newChat = () => {
-    if (streamRef.current || compactRef.current || projectBusyRef.current) return;
+    if (streamRef.current || compactRef.current || projectBusyRef.current || attachmentBusyRef.current) return;
     if (managementDirty && !window.confirm(ht("放弃未保存的修改？"))) return;
     resetChat();
   };
   const activateProjectDraft = async (directory: string, draft?: HermesSessionRow) => {
-    if (loading || streamRef.current || compactRef.current || projectBusyRef.current) return;
+    if (loading || streamRef.current || compactRef.current || projectBusyRef.current || attachmentBusyRef.current) return;
     if (managementDirty && !window.confirm(ht("放弃未保存的修改？"))) return;
     projectBusyRef.current=true;setProjectBusy(true);
     try {
       // Confirm a fresh draft's directory without changing the previous stored session.
-      const project=await projectRequest<{cwd:string;branch?:string;mapped?:boolean}>("project",{cwd:directory});
+      const project=await hermesChat.bindProject<{cwd:string;branch?:string;mapped?:boolean}>({cwd:directory});
       resetChat();setCwd(project.cwd);setProjectBranch(project.branch ?? "");setMappedProject(Boolean(project.mapped));
       rememberHermesProject(project.cwd);
       const row={...draft,id:draft?.id ?? `draft:${crypto.randomUUID()}`,title:draft?.title || ht("新会话"),cwd:project.cwd,git_branch:project.branch,message_count:0,last_active:Date.now()/1000,draft:true};
       setDrafts(previous=>[row,...previous.filter(item=>item.id!==row.id)]);setActiveDraftId(row.id);
+      applyModelSelection(loadHermesModelSelection(row.id) ?? loadHermesModelSelection(null) ?? defaultModelRef.current);
     } finally {projectBusyRef.current=false;setProjectBusy(false);}
   };
-  const selectChat = (id: string) => {
+  const selectChat = (id: string, match?: HermesSearchMatch) => {
     const draft=drafts.find(item=>item.id===id);
     if (draft?.cwd) {if (id!==activeDraftId || selected) void activateProjectDraft(draft.cwd,draft).catch(e=>setError(e instanceof Error?e.message:String(e)));}
-    else void openSession(id);
+    else void openSession(id, match);
   };
 
   const renameSession = async (session: HermesSessionRow) => {
@@ -436,6 +483,7 @@ function HermesWorkspace() {
   };
   const loadFullHistory = async () => {
     if (!selected || busy) return;
+    setSearchFocus(null);
     historyRef.current?.abort();
     const controller = new AbortController(); historyRef.current = controller;
     setLoading(true); setError("");
@@ -455,6 +503,35 @@ function HermesWorkspace() {
     const skills = await hermesJson<{ name: string; enabled?: boolean }[]>("/api/skills");
     return Object.fromEntries(skills.map((skill) => [skill.name, skill.enabled === false]));
   }, []);
+  const attachments = useHermesAttachments({
+    cwd, draftKey: `hermes:${selected ?? activeDraftId ?? "new"}`, blocked: busy || compacting || loading || projectBusy,
+    onImages: files => chatInputRef.current?.addImages(files),
+    onMention: text => chatInputRef.current?.insertText(text),
+    onUploaded: () => setFileRefreshKey(value => value + 1),
+    onBusyChange: value => { attachmentBusyRef.current = value; },
+    selectDirectory: path => changeProjectDirectory(path),
+  });
+  const drop = useDragDrop(attachments.attach);
+  const handleCommand = async (message: string) => {
+    setError("");
+    const result = await runHermesCommand(message, {
+      busy: busy || compacting || loading || projectBusy || attachments.busy,
+      hasSession: Boolean(selected || activeDraftId),
+      compact: async () => { if (!selected) return false; void compactSession(); return true; },
+      rename: async title => {
+        if (activeDraftId) setDrafts(previous => previous.map(item => item.id === activeDraftId ? { ...item, title } : item));
+        else if (selected) { await hermesJson(`/api/sessions/${encodeURIComponent(selected)}`, { method: "PATCH", body: JSON.stringify({ title }) }); await refreshSessions(); }
+      },
+      copy: async () => {
+        const answer = messages.findLast(item => item.role === "assistant" && item.text)?.text;
+        if (!answer) throw new Error("暂无可复制的助手回复。");
+        await copyText(answer);
+      },
+      info: () => { if (!selected) throw new Error("请先选择一个已保存的会话。"); setSystemOpen(false); setInfoOpen(true); setInfoRevision(value => value + 1); },
+    });
+    if (result.handled && result.error) setError(ht(result.error));
+    return result;
+  };
   const openFile = (path: string) => {
     if (!mappedProject) { rightPanelRef.current?.openFile(path); setSidebarOpen(false); return; }
     void fetch("/api/hermes-session/path", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }).then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error); rightPanelRef.current?.openFile(result.path); setSidebarOpen(false); }).catch(error => setError(error.message));
@@ -464,7 +541,7 @@ function HermesWorkspace() {
     <HermesActivityRail view={workspaceView} inert={page!==null} onNavigate={navigateWorkspace} onSettings={()=>navigatePage("general")} onProfiles={()=>navigatePage("profiles")}/>
     {sidebarOpen && <button className="hermes-sidebar-backdrop" aria-label={ht("关闭侧栏")} onClick={() => setSidebarOpen(false)} />}
     <div className="hermes-sidebar-host" hidden={workspaceView!=="home"} inert={page !== null || workspaceView!=="home"}>
-      <HermesSidebar directoryBusy={projectBusy} sessions={[...drafts,...sessions]} selected={selected ?? activeDraftId} busy={busy || compacting || sessionActionBusy || projectBusy} loading={loading} onPin={session=>void updateSessionFlag(session,"pinned")} onArchive={session=>void updateSessionFlag(session,"archived")} hasMore={sessions.length < sessionTotal} onLoadMore={()=>void loadMoreSessions()} cwd={cwd} branch={projectBranch} onCwdChange={changeProjectDirectory} onNew={activateProjectDraft} onSelect={selectChat} onSettings={navigatePage} onOpenFile={openFile} onOpenTerminal={(dir) => { rightPanelRef.current?.openTerminal(dir); setSidebarOpen(false); }} onMention={(path) => chatInputRef.current?.insertText(`@${path} `)} onRename={(session) => void renameSession(session)} onDelete={(session) => void deleteSession(session)} onClose={() => setSidebarOpen(false)} refreshKey={fileRefreshKey} />
+      <HermesSidebar directoryBusy={projectBusy || attachments.busy} sessionRevision={sessionsRevision} sessions={[...drafts,...sessions]} selected={selected ?? activeDraftId} busy={busy || compacting || sessionActionBusy || projectBusy || attachments.busy} loading={loading} onPin={session=>void updateSessionFlag(session,"pinned")} onArchive={session=>void updateSessionFlag(session,"archived")} hasMore={sessions.length < sessionTotal} onLoadMore={()=>void loadMoreSessions()} cwd={cwd} branch={projectBranch} onCwdChange={changeProjectDirectory} onNew={activateProjectDraft} onSelect={selectChat} onSettings={navigatePage} onOpenFile={openFile} onOpenTerminal={(dir) => { rightPanelRef.current?.openTerminal(dir); setSidebarOpen(false); }} onMention={(path) => chatInputRef.current?.insertText(buildAtMentionText(path,false))} onRename={(session) => void renameSession(session)} onDelete={(session) => void deleteSession(session)} onClose={() => setSidebarOpen(false)} refreshKey={fileRefreshKey} />
     </div>
     <section className="hermes-main" hidden={workspaceView!=="home"} inert={page !== null || workspaceView!=="home" || rightPanelExpanded && rightPanelOpen}>
       <header className="hermes-top"><button className="hermes-toolbar-icon" aria-label={isMobile || !desktopSidebarOpen ? ht("打开侧栏") : ht("收起侧栏")} onClick={() => isMobile ? setSidebarOpen(true) : setDesktopSidebarOpen(!desktopSidebarOpen)}><HermesUiIcon name="sidebar" /></button>
@@ -476,26 +553,37 @@ function HermesWorkspace() {
       </header>
       {selected && infoOpen && !page && workspaceView==="home" && !(rightPanelExpanded && rightPanelOpen) && <HermesSessionInfo detail={currentDetail} sessionId={selected} cwd={cwd} error={infoError} onRefresh={()=>setInfoRevision(v=>v+1)} onClose={closeSessionInfo} buttonRef={usageButtonRef}/>}
       {selected && systemOpen && !page && workspaceView==="home" && !(rightPanelExpanded && rightPanelOpen) && <HermesSystemPrompt key={selected} sessionId={selected} refreshKey={infoRevision} onClose={closeSystemPrompt} buttonRef={systemButtonRef}/>}
-      <div className={`hermes-chat ${!messages.length ? "is-empty" : ""}`} dir={display.direction} style={{"--hermes-user-transparency":`${display.bubbleTransparency}%`} as CSSProperties}>
+      <div className={`hermes-chat ${!messages.length ? "is-empty" : ""}`} dir={display.direction} style={{"--hermes-user-transparency":`${display.bubbleTransparency}%`} as CSSProperties} onDragEnter={drop.handleDragEnter} onDragOver={drop.handleDragOver} onDragLeave={drop.handleDragLeave} onDrop={drop.handleDrop}>
+        {drop.isDragOver && <div className="hermes-drop-overlay" aria-live="polite">{ht("添加附件")}</div>}
         <div className="hermes-transcript" dir="ltr">
         <div className="hermes-messages" dir={display.direction} ref={scrollRef} onScroll={event=>{const el=event.currentTarget;followTailRef.current=el.scrollHeight-el.scrollTop-el.clientHeight<48;}}>
-          {loading ? <div className="hermes-muted">{ht("正在读取 Hermes 会话…")}</div> : <div className="hermes-message-list">{messages.map((m, i) => <div ref={element=>{const index=minimapRefIndexes[i];if(index!==null)messageRefs.current[index]=element;}} key={`${i}-${m.role}`} className={m.role === "user" ? "hermes-user-row" : "hermes-assistant-row"}>
+          {loading ? <div className="hermes-muted">{ht("正在读取 Hermes 会话…")}</div> : <div className="hermes-message-list">{messages.map((m, i) => <div ref={element=>{const index=minimapRefIndexes[i];if(index!==null)messageRefs.current[index]=element;}} key={`${i}-${m.role}`} data-search-match={searchFocus?.index === i} className={m.role === "user" ? "hermes-user-row" : "hermes-assistant-row"}>
             {display.showReasoning && m.reasoning && <details className="hermes-reasoning" open={!display.collapseReasoning}><summary>{ht("推理过程")}</summary><MarkdownBody>{m.reasoning}</MarkdownBody></details>}
             {m.role === "tool" ? <HermesToolMessage key={`${selected ?? activeDraftId}:${m.tool?.id ?? i}`} message={m} scope={selected ?? activeDraftId ?? "new"} onOpenFile={openFile} cwd={cwd ?? undefined} /> : <MessageView message={m.role === "user" ? { role: "user", content: m.images?.length ? [{ type: "text", text: m.text }, ...m.images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.mimeType, data: image.data } }))] : m.text } : { role: "assistant", content: [{ type: "text", text: m.text || (busy ? ht("思考中…") : "") }], model: modelName, provider: "hermes" }} isStreaming={busy && i === messages.length - 1} onOpenFile={openFile} cwd={cwd ?? undefined} />}
           </div>)}</div>}
           {tools.length > 0 && <details className="hermes-tool-activity" open={display.toolDetails}><summary>{ht("工具活动 ·")}{tools.length}</summary>{tools.map((tool, i) => <pre key={i}>{display.toolDetails ? tool : tool.split("：")[0]}</pre>)}</details>}
           {approval && <div className="hermes-approval"><strong>{ht("Hermes 需要你的确认")}</strong><pre>{approval.command || ht("即将执行一项受保护的操作。")}</pre><div><button onClick={() => void respondApproval("deny")}>{ht("拒绝")}</button><button onClick={() => void respondApproval("once")}>{ht("允许一次")}</button></div></div>}
-          {clarify && <HermesClarify key={clarify.request_id} request={clarify} onAnswer={async answers => { await projectRequest("chat", { action: "clarify", run_id: activeRunIdRef.current, request_id: clarify.request_id, answers }); setClarify(null); }} />}
+          {clarify && <HermesClarify key={clarify.request_id} request={clarify} onAnswer={async answers => { await hermesChat.clarify(activeRunIdRef.current, clarify.request_id, answers); setClarify(null); }} />}
           {compactNotice && <div className="hermes-compact-notice" role="status">{compactNotice}</div>}{error && <div className="hermes-error" role="alert">{error}</div>}
         </div>
         {!isMobile && !loading && messages.length>0 && <ChatMinimap key={selected ?? "new"} messages={minimapHistory} getStreamingMessage={getMinimapStreamingMessage} scrollContainer={scrollRef} messageRefs={messageRefs} onRevealHistory={revealRenderedHistory} turnsBefore={0}/>}
         </div>
-        {!loading && !messages.length && <div className="hermes-new-session-brand"><div className="new-session-brand"><span className="hermes-logo" aria-hidden="true">H</span><div className="new-session-brand-text"><span className="new-session-brand-name">Hermes Web</span><span className="new-session-meta">Hermes Agent · Pi Web</span></div></div></div>}
-        <ChatInput ref={chatInputRef} onSend={(text, images) => void send(text, images)} onAbort={() => compacting ? compactRef.current?.abort() : void stop()} isStreaming={busy || compacting} thinkingAutoLabel={ht("跟随默认")} isAutoThinkingSelection={thinking === "auto"} thinkingLevel={thinking} onThinkingLevelChange={setThinking} availableThinkingLevels={["off","minimal","low","medium","high","xhigh","max"]} thinkingLevelMap={{off:ht("关闭"),minimal:ht("最低"),low:ht("低"),medium:ht("中"),high:ht("高"),xhigh:ht("很高"),max:ht("最高")}} onCompact={selected && !loading ? ()=>void compactSession() : undefined} model={{ provider: modelProvider || "hermes", modelId: modelName }} modelList={[...modelCatalog,...models.filter(id=>!modelCatalog.some(item=>item.id === id)).map((id) => ({ id, name: id, provider: "hermes", input: ["text", "image"] }))]} onModelChange={(provider,id) => {setModelName(id);setModelProvider(provider === "hermes" ? "" : provider);}} draftKey={`hermes:${selected ?? activeDraftId ?? "new"}`} cwd={cwd} loadSkillDormancy={loadSkillDormancy} />
+        {!loading && !messages.length && <div className="hermes-new-session-brand"><div className="new-session-brand"><HermesAvatar size={40} className="hermes-logo" /><div className="new-session-brand-text"><span className="new-session-brand-name">Hermes Web</span><span className="new-session-meta">Hermes Agent</span></div></div></div>}
+        {(attachments.busy || attachments.pending.length > 0 || attachments.notice || attachments.error || attachments.foldersSkipped) && <div className="hermes-attachments-status" aria-label={ht("附件上传")}>
+          {attachments.busy && <><span role="status">{ht("正在上传附件…")}</span><progress max={100} value={attachments.progress} aria-label={ht("附件上传进度")} /></>}
+          {!attachments.busy && attachments.pending.length > 0 && <span>{attachments.pending.map(file=>file.name).join(", ")}</span>}
+          {attachments.notice && <span role="status">{ht(attachments.notice)}</span>}
+          {attachments.foldersSkipped && <span role="status">{ht("暂不支持上传文件夹，请选择文件。")}</span>}
+          {attachments.error && <span role="alert">{ht(attachments.error)}</span>}
+          {!attachments.busy && attachments.pending.length > 0 && <button type="button" title={ht("重试上传")} aria-label={ht("重试上传")} onClick={attachments.retry}><RefreshCw size={15} /></button>}
+          {!attachments.busy && <button type="button" title={ht("清除附件提示")} aria-label={ht("清除附件提示")} onClick={attachments.dismiss}><X size={15} /></button>}
+        </div>}
+        <ChatInput ref={chatInputRef} builtinCommands={HERMES_COMMANDS} onBuiltinCommand={handleCommand} submissionDisabled={attachments.busy || projectBusy || loading} onAttachFiles={files=>attachments.attach(files.map(file=>({kind:"file",file})))} onSend={(text, images) => void send(text, images)} onAbort={() => compacting ? compactRef.current?.abort() : void stop()} isStreaming={busy || compacting} thinkingAutoLabel={ht("跟随默认")} isAutoThinkingSelection={thinking === "auto"} thinkingLevel={thinking} onThinkingLevelChange={setThinking} availableThinkingLevels={["off","minimal","low","medium","high","xhigh","max"]} thinkingLevelMap={{off:ht("关闭"),minimal:ht("最低"),low:ht("低"),medium:ht("中"),high:ht("高"),xhigh:ht("很高"),max:ht("最高")}} onCompact={selected && !loading ? ()=>void compactSession() : undefined} model={{ provider: modelProvider || "hermes", modelId: modelName }} modelList={[...modelCatalog,...models.filter(id=>!modelCatalog.some(item=>item.id === id)).map((id) => ({ id, name: id, provider: "hermes", input: ["text", "image"] }))]} onModelChange={(provider,id) => changeModel(id,provider)} draftKey={`hermes:${selected ?? activeDraftId ?? "new"}`} cwd={cwd} loadSkillDormancy={loadSkillDormancy} />
       </div>
     </section>
     {workspaceView!=="home" && <div className="hermes-workspace-host" inert={page!==null}><HermesWorkspacePage key={workspaceView} view={workspaceView} dirty={managementDirty} onDirtyChange={setManagementDirty} cwd={cwd} onCwdChange={changeProjectDirectory} messages={messages} sessionId={selected} refreshKey={fileRefreshKey}/></div>}
     <HermesRightPanel ref={rightPanelRef} open={rightPanelOpen && workspaceView==="home"} cwd={cwd} isMobile={isMobile} inert={page !== null} onOpen={()=>setRightPanelOpen(true)} onHide={()=>setRightPanelOpen(false)} onError={setError} onExpandedChange={setRightPanelExpanded}/>
-    {page && <HermesSettingsDialog section={page} onSectionChange={navigatePage} onClose={() => navigatePage(null)} onDirtyChange={setManagementDirty} models={models} model={modelName} modelProvider={modelProvider} onModelChange={(id,provider)=>{setModelName(id);setModelProvider(provider ?? "");}} modelBusy={busy || compacting} />}
+    {page && <HermesSettingsDialog section={page} onSectionChange={navigatePage} onClose={() => navigatePage(null)} onDirtyChange={setManagementDirty} models={models} model={modelName} modelProvider={modelProvider} onModelChange={changeModel} modelBusy={busy || compacting || loading} />}
+    {attachments.pickerOpen && <DirectoryPicker initialPath={cwd ?? undefined} busy={attachments.picking} error={attachments.error} onCancel={attachments.cancelPicker} onSelect={path=>void attachments.selectDirectory(path)} />}
   </main>;
 }

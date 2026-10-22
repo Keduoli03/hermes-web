@@ -44,7 +44,7 @@
     "lint": "eslint .",
     "test:terminal": "node e2e/terminal.mjs",
     "test:e2e": "node e2e/run.mjs",
-    "test:hermes": "node --experimental-strip-types --test \"lib/hermes*.test.mjs\" lib/web-oauth.test.mjs",
+    "test:hermes": "node --experimental-strip-types --test \"lib/hermes*.test.mjs\" \"lib/web-auth*.test.mjs\" lib/web-request-auth.test.mjs lib/web-oauth.test.mjs app/api/web-auth/route.test.mjs lib/request-security.test.mjs lib/auth-throttle.test.mjs components/ChatInput.test.mjs lib/file-upload-client.test.mjs",
     "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\"",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
