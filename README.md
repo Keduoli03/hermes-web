@@ -1,318 +1,266 @@
-# Hermes Web Workspace
+<img src="public/icons/hermes-avatar.png" width="64" height="64" alt="Hermes Web">
 
-基于 [agegr/pi-web](https://github.com/agegr/pi-web) 的 MIT 开源界面，逐步适配 Hermes Agent Dashboard 与 API Server 的独立 Web 工作区。**目前仍是开发中的原型**，请勿用于公网生产或把本地服务暴露到公网。
+# Hermes Web
 
-## 本机开发
+**在浏览器中使用 Hermes Agent，管理会话、项目、模型、技能与定时任务。**
 
-环境要求：Node.js ≥ 23，npm。
+A self-hosted web workspace for Hermes Agent.
+
+**本项目基于 [agegr/pi-web](https://github.com/agegr/pi-web)（MIT License）二次开发，并非全部原创实现。** 会话界面、Markdown 渲染、文件浏览器、终端和设置组件等大量基础能力来自 Pi Web；本仓库在此基础上完成 Hermes Agent 的连接适配、管理页面和相关交互调整。
+
+Hermes Web 支持桌面与手机访问，适合在自己的电脑或服务器上部署。原始上游版权和 MIT 许可文本保留在 [`LICENSE`](LICENSE) 中。
+
+本项目由社区独立维护，并非 Pi Web 或 Nous Research 的官方发行版，也不代表这些上游项目为本仓库的改动提供背书。项目仍在持续开发，部分管理功能取决于已安装 Hermes 版本提供的接口。
+
+[快速开始](#快速开始) · [功能一览](#功能一览) · [配置说明](#配置说明) · [部署](#部署) · [常见问题](#常见问题) · [MIT License](LICENSE)
+
+![Hermes Web 会话与项目文件工作区](docs/images/workspace.png)
+
+> 文档截图来自真实界面，使用固定演示数据，不包含私人会话、真实凭据或真实模型调用结果。
+
+## 功能一览
+
+| 模块 | 已接入能力 |
+| --- | --- |
+| 会话与聊天 | 历史会话、全文搜索与匹配定位、置顶与归档、重命名、流式回复、推理内容、工具调用、执行确认、澄清表单、停止与断线恢复 |
+| 项目工作区 | 项目目录选择、会话目录恢复、文件浏览与预览、普通文件和图片附件、拖放上传、失败重试、同名文件保护、终端与 Git 信息 |
+| 模型与提供商 | 提供商卡片、模型搜索与切换、自定义接口、模型发现、当前会话选择恢复、显式设置默认模型、后端支持的账号授权与密钥配置 |
+| 定时任务 | 新建与编辑、暂停与恢复、立即运行、删除、任务详情及运行记录；定时任务记录与首页普通会话分开 |
+| 技能与工具 | 已安装技能、SKILL.md 预览与编辑、技能市场、安装与更新、MCP 服务器配置、连接测试与授权、插件和内置工具管理 |
+| 配置与运行管理 | 基于 schema 的配置表单、YAML 编辑、配置档案、记忆与用户画像、SOUL、消息渠道、配对、Webhooks、日志与用量统计 |
+| 产物与界面 | 会话产物浏览、媒体与文档预览、下载与手动保存版本、浅色与深色主题、字体与聊天显示偏好、响应式布局与 PWA |
+
+模型选择和“设为默认”是两个操作：前者记录当前会话下一次使用的模型，刷新网页后可以恢复；后者明确修改 Hermes 的默认配置。成功运行后，以 Hermes 保存的实际会话模型和路由为准。
+
+目前支持的会话命令为 `/compact`、`/name`、`/session` 和 `/copy`。未实现的命令会明确提示，不会作为普通消息静默发送。
+
+<details>
+<summary>查看模型管理与定时任务截图</summary>
+
+### 模型与提供商
+
+![提供商卡片、模型选择与默认模型操作](docs/images/models.png)
+
+### 定时任务
+
+![任务详情、执行计划和独立运行记录](docs/images/scheduled-tasks.png)
+
+</details>
+
+## 快速开始
+
+### 1. 准备环境
+
+- **Node.js 与 npm**：建议使用 Node.js 24；仓库声明的最低版本为 `22.19.0`。
+- **Hermes Agent**：已有可用的 [Hermes Agent 安装](https://github.com/NousResearch/hermes-agent)，并启用 Dashboard。普通聊天还需要 Hermes API Server。
+- **模型服务**：在 Hermes 中配置好至少一个可用提供商。安装本项目不会代为创建模型账号或配置 API 额度。
+
+最直接的部署方式是让 Hermes Web 与 Hermes 运行在同一台机器、同一文件系统中。
+
+### 2. 安装依赖
 
 ```bash
 git clone https://github.com/Keduoli03/hermes-web.git
 cd hermes-web
 npm ci
 cp .env.example .env.local
-# 编辑 .env.local，填入你自己的本地配置
-npm run dev
 ```
 
-打开终端显示的本地地址。上游 pi-web 默认开发端口为 `30141`；先检查并复用本仓库的健康开发进程。若端口属于其他应用，可为本仓库指定独立端口（例如 `node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p 30142`），不要启动两个共用本仓库 `.next` 的开发进程。常用检查：
+PowerShell 中可用 `Copy-Item .env.example .env.local` 复制配置模板。
 
-```bash
-npx tsc --noEmit
-npm run lint
-node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-dashboard-client.test.mjs
-# 开发时不要运行 next build，避免破坏 .next 的开发缓存
-```
+### 3. 配置连接与登录
 
-## Hermes 接入
-
-服务器部署可使用 Nous 官方账号登录，支持额外的账号白名单和密码备用入口。设置 `HERMES_WEB_OAUTH_CLIENT_ID` 即启用认证；需要注册独立客户端及服务器域名回调，详见 [官方登录配置](docs/hermes-official-login.md)。登录会话和一次性登录流程持久化到 `HERMES_WEB_DATA_DIR/auth`（默认 `~/.hermes-web/auth`），重启后仍有效，多个进程共享该目录时可读取相同登录状态和撤销结果。登录有效期仍受官方令牌限制。
-
-普通聊天由服务端代理访问 Hermes API Server（`/v1/runs` 与 SSE）。选择项目文件夹的聊天使用官方 Dashboard WebSocket：在发送前为该会话设置真实工作目录，文件浏览、上传和新终端也使用这个目录。浏览器只持有面板登录会话，不应持有 Hermes API key。服务端地址和 key 仅配置在本机 `.env.local`。API Server 建议只绑定 `127.0.0.1`，不要将 key 提交到仓库、Issue、截图或聊天。
-
-项目聊天已接入文本、图片、推理、工具活动、执行确认、澄清表单和停止。澄清支持单选、多选、自由输入、多问题及跳过，兼容旧通知协议与新 JSON-RPC 服务端请求。普通和项目聊天由服务端保留事件，断线自动重连；本标签页刷新后恢复原运行，不重新发送提示词。事件保留至运行结束后 30 分钟，应用进程重启后须重新打开已保存历史；聊天部署采用单进程或对运行请求保持粘性路由。
-
-Dashboard `/api/status` 可用于只读状态；管理接口需 Dashboard 鉴权。若 Hermes 未提供适合独立服务的受支持 Dashboard token，管理页面会受限；不要复制运行中进程的秘密或绕过官方认证。
-
-同机部署时，`HERMES_DASHBOARD_URL` 使用 `http://127.0.0.1:实际端口`，默认端口为 8648。用户登录本网站后，服务端自动获取并验证 Hermes 官方本机握手；无需手动填写 `HERMES_DASHBOARD_SESSION_TOKEN`。令牌只保存在服务端内存，Hermes 重启后会重新握手；设置的“账号与访问”可查看连接状态及重新连接。Dashboard 须作为私有回环服务运行；独立开启公网 OAuth 认证的 Dashboard 不提供该握手。显式令牌仍保留给受支持的远程或手动连接方式。普通聊天继续使用已有 `HERMES_API_SERVER_URL` 和 `API_SERVER_KEY`。
-
-如果现有 Dashboard 会跳转到 Nous 登录，保留它的认证，另起一个仅供本项目连接的私有实例。仅把本项目地址改成 `127.0.0.1` 不会改变后端认证模式；私有实例还须覆盖继承的公网 `dashboard.public_url`。具体配置和 systemd 模板见 [私有 Dashboard 部署](docs/hermes-private-dashboard.md)。本项目的用户登录、Dashboard 管理连接和聊天 API 的认证相互独立。
-
-网站登录可以选择 Nous 官方账号，或配置一个自设管理员账号：
+编辑 `.env.local`，按自己的安装填写：
 
 ```dotenv
+# Hermes 管理接口与项目聊天。端口以你的 Hermes 实际配置为准。
 HERMES_DASHBOARD_URL=http://127.0.0.1:8648
+
+# 普通聊天的 Hermes API Server，与模型提供商的 API 地址不同。
+HERMES_API_SERVER_URL=http://127.0.0.1:8642
+API_SERVER_KEY=replace-with-your-hermes-api-server-key
+
+# 本网站的登录账号，与上述后端密钥相互独立。
 PI_WEB_USERNAME=admin
-PI_WEB_PASSWORD=替换为你自己的强密码
-PI_WEB_ALLOWED_HOSTS=你的域名
+PI_WEB_PASSWORD=replace-with-a-long-random-password
+PI_WEB_ALLOWED_HOSTS=localhost,127.0.0.1
 ```
 
-只设置密码时仍保留原密码登录；官方登录按上述独立客户端配置启用。对外访问必须有一种登录方式，未配置时展示安装提示，不开放后台管理。跨机器项目使用 `HERMES_PROJECT_PATH_MAP` 的本地挂载目录与远端目录映射；系统共享或挂载需由管理员提前建立。
+启动前替换示例密码和 API key。本项目没有预设管理员密码。
 
-已配置私有 Dashboard 时，自动连接不再需要执行额外脚本。旧的手动连接脚本仍可用于诊断（只写入忽略的 `.env.local`，不会输出认证令牌）：
+同机私有 Dashboard 支持自动本机握手，通常不需要手动填写 `HERMES_DASHBOARD_SESSION_TOKEN`。这里的“私有”指后端本身使用回环私有模式；仅把连接地址写成 `127.0.0.1`，不会关闭原 Dashboard 的公网登录认证。详见[私有 Dashboard 接入](docs/hermes-private-dashboard.md)。
+
+如果暂时只使用项目聊天和管理功能，可以先配置 Dashboard；普通聊天需在 API Server 配置完成后使用。
+
+### 4. 启动
 
 ```bash
-node bin/connect-hermes-local.mjs http://127.0.0.1:实际端口
-```
-
-## 验证
-
-```bash
-node --experimental-strip-types --test lib/hermes-api-proxy.test.mjs lib/hermes-dashboard-client.test.mjs
-# 先启动本仓库开发服务，再运行浏览器协议测试（模拟 Hermes 响应，不写真实数据）
-npm run test:e2e
-# 可以筛选套件：npm run test:e2e -- completion workspace
-node --experimental-strip-types e2e/hermes-workspace.mjs
-node --test lib/hermes-project-rpc.test.mjs
-node --experimental-strip-types e2e/hermes-project-folder.mjs
-# 真实目录只读确认，不创建会话、不调用模型
-node --experimental-strip-types e2e/hermes-project-live.mjs
-node --experimental-strip-types --test lib/hermes-config-form.test.mjs lib/hermes-i18n.test.mjs
-# 已连接本地 Dashboard 后，只读检查真实设置界面
-node e2e/hermes-live-settings.mjs
-# 可设置 HERMES_TEST_URL 和 HERMES_TEST_BROWSER=msedge 或 chrome
-```
-
-浏览器协议测试覆盖语言切换、模型提供商与模型发现、记忆下拉框、表单/YAML 保存、管理页请求体、失败后保留草稿、Markdown/SSE 和移动端导航。项目目录测试覆盖后端确认、会话目录恢复、切换失败、缺失目录和普通聊天。截图保存在系统临时目录 `hermes-web-qa`。只读联调脚本验证真实 Dashboard schema、设置控件及目录确认，不写入用户配置，也不调用模型。
-
-## 当前边界
-
-- 演示环境：<https://demo.blueke.top>，仅用于验证原型。
-- 正式的 `chat.blueke.top` 尚未切换。
-- 聊天复用 Pi Web 的 MessageView、Markdown、主题和代码高亮；支持历史会话、流式回复、工具活动、审批、停止和模型选择。
-- Cron 支持任务列表、新建、编辑、暂停/恢复、立即运行、删除和运行记录。
-- Skills 支持列表筛选、Markdown 预览、新建、编辑 SKILL.md 和启停。
-- Config 默认使用官方 schema 生成表单，布尔值为开关、枚举为下拉框、数值为数字输入；可切换 YAML 源码、导入/导出、还原。表单保存仅提交修改字段，源码编辑保存原始 YAML；本地 schema 已验证 896 个字段。
-- 模型管理沿用 Pi 的提供商列表与详情布局，支持添加/编辑/删除自定义提供商、协议选择、模型发现、手动模型 ID、上下文窗口和默认提供商；密钥不回填脱敏预览。
-- “记忆与上下文 → 记忆内容”以三栏展示当前服务档案的我的笔记、用户画像和灵魂，支持 Markdown 预览、编辑、保存和取消。通过官方接口读取 MEMORY.md、USER.md、SOUL.md，保存前检查内容是否已变化；失败时保留草稿。手机端改为单列卡片。
-- API Keys 使用官方 `/api/env`：脱敏列表、自定义变量、更新和删除；新值保存成功后清空输入。
-- Status、Logs、Usage 提供状态、日志筛选、用量汇总与按模型/日期的统计表。
-- 保留 Pi Web 的工作区结构：左侧会话和文件浏览器，底部模型/技能/设置，顶部历史/系统/工具栏，底部原版 ChatInput。
-- 设置弹窗使用左侧分类菜单和右侧内容面板，支持搜索；记忆、上下文压缩、助手行为、终端、安全、浏览器和语音各有独立入口。默认简体中文，常规页可切换界面语言，选择保存在 `hermes-web-locale`。桌面版的中文字段标签和说明已导入；表单只显示名称、简短说明和控件，不展示键名、路径与字段数量；技术标识保留在 YAML 源码中。顶部为普通面包屑；左侧功能分类可展开/收起，子分类留在同一列，技能等运行对象列表保留侧栏。文件预览及终端复用 Pi Web 组件。
-- 手机保留所有入口；管理页离开时提醒未保存修改。
-- 最左侧主导航依次为首页、技能工具、消息平台、产物、定时任务。技能工具页集中已安装技能、技能市场、MCP 和内置工具；切换页面保留当前聊天与文件面板。产物默认展示全部会话，以卡片展示图片、视频、音频、文件和代码；通过下拉框选择当前或指定会话，支持类型筛选、搜索、媒体预览与下载、Markdown 排版预览及源码切换、普通文本预览（最大 1 MB）、静态 HTML/SVG 隔离预览，也可浏览工作区文件。服务端按会话保存可重建的 JSON 索引：初次分页读取完整历史（包含压缩前记录），再次访问检查会话元数据，仅重扫变化的会话；刷新按钮强制重扫。索引默认位于 `~/.hermes-web/artifacts`，可通过 `HERMES_WEB_DATA_DIR` 指定数据目录，服务器部署时应持久化该目录。索引不复制媒体文件或修改 Hermes 原数据库；含内嵌媒体字节的会话不落盘缓存。索引最长 24 小时重新校验，无更新时间的会话缓存 1 分钟；目录不可写时仍可浏览，但无法持久缓存。媒体访问遵守 Hermes 官方文件权限，链接失效或文件被删除时提示预览失败。手动保存的历史版本独立存储，见下文。
-- 技能市场（Skills Hub）支持官方目录、来源搜索、内容预览、检查、安装、卸载和更新；后台安装按任务状态确认结果。
-- 消息渠道（Channels）支持配置当前服务档案的各平台、启停、凭据保存/清除和连接检测；Telegram / WhatsApp 支持扫码或深链接绑定、状态轮询、取消、过期提示与保存，保存后的网关重启结果由官方接口确认。
-- 配置档案（Profiles）统一从最左侧导航底部进入，各功能页不再重复提供档案选择器。支持新建、复制、改名、用途/模型编辑、默认选择、删除及后端归档路径导入、导出及归档下载；更改默认档案不会切换已运行服务或会话的档案。
-- MCP 管理支持在当前服务档案添加 HTTP/本地服务器、编辑连接、启停、删除、工具测试、OAuth 授权/取消和官方目录安装；插件提供的服务器保持只读。
-- 设置提供 Hermes 插件列表、启停、来源安装、更新、卸载和 schema 设置；Webhooks 提供启用、新建订阅、启停、删除及一次性密钥显示；配对审批提供批准待处理用户和撤销授权。多智能体任务提供运行列表、暂停/恢复派发、项目会话子任务指令、停止和输出查看，任务模型及并行限制继续使用子任务设置。操作取决于已安装 Hermes 版本实际支持的接口，旧服务会明确显示后端错误，不会改用 Pi 接口。
-- 产物预览提供手动保存版本和下载历史版本；每个产物最多 20 个不同内容版本，每个版本最大 32 MB，保存到 `HERMES_WEB_DATA_DIR/artifact-versions`，按后端及会话隔离。只保存明确选择的代码或 Hermes 管理的文件，外部链接不抓取；下载前重新验证会话和产物访问权。
-- 上游组件和 API 中仍有 Pi Agent 依赖，适配时需逐项替换，不能误接原 Pi 后端。
-
-## 来源与开发说明
-
-本仓库 fork 自 pi-web。本轮拉取并对照上游提交 `894e1a28dbeeb7b457c7712e495d975fe9927b89`，保留原版 ChatInput、MessageView、FileExplorer、FileViewer、DirectoryPicker、TerminalPanel 与共享 SettingsUi。版权和 MIT 许可证见 [`LICENSE`](./LICENSE)。开发前请先读 [`PORT-PLAN.md`](./PORT-PLAN.md) 与 [`AGENTS.md`](./AGENTS.md)。
-
----
-
-## pi-web 上游 README
-
-[中文文档](./README.zh-CN.md) | [日本語](./README.ja.md) | [Русский](./README.ru.md)
-
-Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). Pi Web uses the same local configuration and session files as pi, so you can browse and resume conversations, run agent turns, configure models and resources, and inspect project files from a browser.
-
-**[Try the interactive demo →](https://agegr.github.io/pi-web/)** The real Pi Web UI runs entirely in your browser, with sample sessions, files and models. There is nothing to install; replies are pre-written and no model is called.
-
-![Pi Web displaying a pi session with structured Markdown, tool calls, and project navigation](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot2.png)
-
-## Features
-
-- **Session workspace**: browse, resume, rename, export, and delete conversations grouped by project, with running state, context usage, cost, and compaction details.
-- **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
-- **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
-- **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
-- **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
-- **English, Simplified Chinese, and Traditional Chinese UI**: Pi Web follows the browser language initially and provides a language switcher in the top bar.
-
-## Quick Start
-
-Pi Web requires Node.js 22.19.0 or newer. Check your version with `node --version`, then run:
-
-```bash
-npx @agegr/pi-web@latest
-```
-
-The CLI opens a browser after the server is ready. If it does not, open [http://127.0.0.1:30141](http://127.0.0.1:30141). Pi Web listens only on `127.0.0.1` by default.
-
-If no model provider is configured yet, open the **Models** panel to sign in or add an API key.
-
-To install the `pi-web` command globally:
-
-```bash
-npm install -g @agegr/pi-web@latest
-pi-web
-```
-
-Commands:
-
-```bash
-pi-web version          # print the installed version
-pi-web status           # list running servers
-pi-web stop [--port N]  # stop a running server
-pi-web open [--port N]  # open a running server in the browser
-pi-web update [--check] # update a global npm install
-```
-
-To update, run `pi-web stop`, then `pi-web update` (or run the same install command again). To uninstall, run `npm uninstall -g @agegr/pi-web`.
-
-## Configuration
-
-For port and hostname, command-line options override the corresponding environment variables. Either `--no-open` or `PI_WEB_NO_OPEN=1` disables automatic browser opening. Run `pi-web --help` (or `-h`) to print startup options and exit without starting the server. Unknown options exit with an error.
-
-| Option or environment variable | Purpose | Default |
-| --- | --- | --- |
-| `--help`, `-h` | Print startup options and exit | — |
-| `--port <port>`, `-p <port>`, or `PORT` | Server port | `30141` |
-| `--hostname <host>`, `-H <host>`, or `PI_WEB_HOSTNAME` | Bind hostname | `127.0.0.1` |
-| `--no-open` or `PI_WEB_NO_OPEN=1` | Do not open a browser automatically | Browser opens |
-| `PI_WEB_APP_NAME` | PWA manifest `name` and `short_name`; surrounding whitespace is trimmed, empty values use the default | `Pi Web` |
-| `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
-| `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
-| `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
-| `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
-| `PI_WEB_SHUTDOWN_DEADLINE_MS` | How long extensions get to handle `session_shutdown` before a closing session is disposed anyway, in milliseconds up to `2147483647`; `0`, invalid or out-of-range values use the default | `5000` (5 s) |
-
-Set `PI_WEB_APP_NAME` before starting the server (for example, `PI_WEB_APP_NAME='Work Pi' pi-web`). After changing it, restart the server to serve the new manifest; no rebuild is required. Updates to the name of an already installed PWA are managed by the browser and are not guaranteed to appear immediately. This does not change the page title or icons.
-
-For example:
-
-```bash
-pi-web --help
-pi-web -p 8080 -H 0.0.0.0 --no-open
-```
-
-### Remote Access
-
-Binding to a non-loopback address exposes an agent that can execute high-privilege actions. On a trusted LAN, require a long random password:
-
-```bash
-PI_WEB_PASSWORD='a-long-random-password' pi-web --hostname 0.0.0.0
-```
-
-Password authentication does not encrypt the connection. Do not expose Pi Web over plain HTTP to the internet; use HTTPS through a trusted reverse proxy or a trusted VPN. If a reverse proxy sends an external hostname, add that exact name to `PI_WEB_ALLOWED_HOSTS`. This allow-list does not change the address Pi Web binds to.
-
-### HTTP Proxy
-
-Server-side model and API requests honor the standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables.
-
-On macOS or Linux:
-
-```bash
-HTTP_PROXY=http://127.0.0.1:7890 \
-HTTPS_PROXY=http://127.0.0.1:7890 \
-NO_PROXY=localhost,127.0.0.1 \
-npx @agegr/pi-web@latest
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:HTTP_PROXY = "http://127.0.0.1:7890"
-$env:HTTPS_PROXY = "http://127.0.0.1:7890"
-$env:NO_PROXY = "localhost,127.0.0.1"
-npx @agegr/pi-web@latest
-```
-
-## Notes
-
-- **Agent data**: Pi Web reads pi data from `~/.pi/agent` by default, including session files under `sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`. Set `PI_CODING_AGENT_DIR` to use another pi agent directory.
-- **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
-- **Shared configuration**: the Models panel uses pi's model, settings, and credential storage, so changes are visible to both interfaces.
-- **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.
-- **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, worktree creation, and removal behavior.
-
-### Downstream Session Context Menu
-
-Electron wrappers and other downstream integrations can provide a session-row
-context menu without patching `SessionSidebar`. Listen for the cancelable
-`pi-web:session-row-contextmenu` browser event and call `preventDefault()`
-synchronously when the integration will handle it:
-
-```js
-window.addEventListener("pi-web:session-row-contextmenu", (event) => {
-  event.preventDefault();
-  const { id, path, cwd, name, clientX, clientY, refresh } = event.detail;
-
-  void openSessionMenu({ id, path, cwd, name, clientX, clientY }).then((changed) => {
-    if (changed) refresh();
-  });
-});
-```
-
-The detail object contains `id`, `path`, `cwd`, optional `name`, pointer
-coordinates, and a `refresh()` callback for actions that change the session
-list. If no listener cancels the extension event, Pi Web opens its built-in
-session menu (pin, rename, fork, mark read or unread, archive, open in new
-tab, delete) at the pointer instead of the browser's native context menu.
-The row's `⋯` button always opens the built-in menu and does not dispatch the
-event. Sessions not yet saved to disk get no built-in menu, so the native one
-still appears for them. This hook is browser-side and independent of Pi agent
-extensions.
-
-### Extension Session Liveness
-
-Server-side Pi extensions with detached work can prevent automatic idle
-session eviction through the versioned global registry:
-
-```js
-const liveness = globalThis[Symbol.for("@agegr/pi-web/session-liveness/v1")];
-const release = liveness?.version === 1
-  ? liveness.register({
-      name: "my-extension",
-      sessionId,
-      sessionFile: sessionFile || undefined,
-      isActive: () => detachedJobs.size > 0,
-    })
-  : () => {};
-```
-
-Register once per active extension session and call the returned idempotent
-`release` function on session shutdown, replacement, or reload. `isActive`
-must be synchronous, cheap, and scoped to the supplied exact session id or
-file. Provider errors fail safe by preserving that session. This lease only
-affects automatic idle eviction; explicit shutdown and Stop fallback cleanup
-still take precedence.
-
-## Development
-
-```bash
-npm install
 npm run dev
 ```
 
-The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141). Run the common checks with:
+打开 <http://127.0.0.1:30141>，登录后从左下角账号菜单进入“账号与访问”，检查管理接口、聊天接口与项目 WebSocket 的连接状态。
+
+这三项检查相互独立。连接检查是只读探测，不会创建会话或调用模型；连接成功也不等于模型推理、目录权限和终端均已验证。
+
+## 服务接入方式
+
+Hermes Web 是 Web 界面与服务端适配层，智能体执行、模型配置、会话存储和任务调度仍由 Hermes 提供。
+
+| 连接 | 负责什么 | 认证方式 |
+| --- | --- | --- |
+| 浏览器 → Hermes Web | 页面、文件操作及所有 Web API 的访问入口 | 本网站密码登录，或单独配置的 Nous 官方账号登录 |
+| Hermes Web → Dashboard | 管理接口、项目会话与原生 WebSocket | 服务端本机握手，或后端支持的显式 Dashboard 令牌 |
+| Hermes Web → API Server | 普通聊天的 Runs API 与 SSE 事件流 | 服务端保存的 `API_SERVER_KEY` |
+
+浏览器只持有面板登录会话，不会获得上述后端认证令牌。模型提供商的密钥也不同于 `API_SERVER_KEY`：前者供 Hermes 调用模型，后者供本项目连接 Hermes API Server。
+
+文件浏览、上传、Git 和终端作用于 **Hermes Web 所在主机**。连接另一台机器上的 Hermes，不会自动获得那台机器的文件或终端；跨机器部署需要真实共享或挂载的文件系统，以及正确的路径映射。
+
+实现与配置归属见[架构说明](docs/hermes-architecture.md)。
+
+## 配置说明
+
+以下变量配置在服务端环境或忽略提交的 `.env.local` 中。完整模板见 [`.env.example`](.env.example)。
+
+| 变量 | 用途 | 默认值或说明 |
+| --- | --- | --- |
+| `HERMES_DASHBOARD_URL` | Dashboard 管理接口与项目聊天地址 | `http://127.0.0.1:8648` |
+| `HERMES_DASHBOARD_SESSION_TOKEN` | 显式 Dashboard 服务令牌 | 同机私有模式可留空；显式令牌不会被自动握手覆盖 |
+| `HERMES_API_SERVER_URL` | 普通聊天 API Server 地址 | `http://127.0.0.1:8642` |
+| `API_SERVER_KEY` | API Server 的 Bearer 凭据 | 普通聊天需要，与 Hermes 端保持一致 |
+| `PI_WEB_USERNAME` | 本网站管理员用户名 | 可选；设置后与密码一同验证 |
+| `PI_WEB_PASSWORD` | 本网站登录密码 | 自行设置；只配置密码时保留密码登录方式 |
+| `PI_WEB_ALLOWED_HOSTS` | 允许访问的主机名 | 对外部署时填写实际域名，不带协议或路径 |
+| `HERMES_WEB_DATA_DIR` | Web 私有状态与缓存目录 | `~/.hermes-web`；部署时应持久化且允许服务账号写入 |
+| `HERMES_PROJECT_PATH_MAP` | 跨主机共享目录的本地/远端路径映射 | 可选；只转换路径，不负责挂载或同步文件 |
+
+### 使用 Nous 官方账号登录
+
+本网站可以单独注册为 Nous 登录客户端，与 Hermes 内置 Dashboard、模型提供商登录分别配置。
+
+```dotenv
+HERMES_WEB_OAUTH_CLIENT_ID=agent:your-instance-id
+HERMES_WEB_PUBLIC_URL=https://hermes.example.com
+PI_WEB_ALLOWED_HOSTS=hermes.example.com
+```
+
+注册的回调地址为 `https://hermes.example.com/api/web-auth/official/callback`。可通过 `HERMES_WEB_OAUTH_ALLOWED_USERS` 进一步限定精确用户 ID，也可以同时保留密码备用入口。
+
+客户端注册、访问权限、HTTPS 与会话有效期说明见[官方登录配置](docs/hermes-official-login.md)。
+
+## 部署
+
+在独立发布目录中安装和构建：
 
 ```bash
-npm test
-node_modules/.bin/tsc --noEmit
+npm ci
+npm run build
+npm run start
+```
+
+`npm run start` 默认监听 `127.0.0.1:30141`。对外访问通过 HTTPS 反向代理，保留 `Host`、支持 WebSocket，并关闭流式响应缓冲。仓库提供了[部署指南](docs/hermes-deployment.md)和 [Web 服务 systemd 模板](deploy/systemd/hermes-web.service.example)。
+
+部署时需要明确的几个边界：
+
+- 对外访问必须配置本网站登录。未配置认证的远程访问会被阻止；无密码回环访问仅用于本地开发。
+- 登录账号共享同一套 Hermes 与主机权限，本项目不提供每个账号独立的容器、文件系统或 Hermes 实例。
+- Dashboard 和 API Server 保持私有，只发布 Hermes Web 的 HTTPS 入口。
+- 持久化 `HERMES_WEB_DATA_DIR`，备份 Hermes 自身数据与 Web 私有数据；元数据缓存不能替代备份。
+- 活跃聊天事件与 WebSocket 归属仍在应用进程内，使用单进程部署，或为运行中的聊天保持粘性路由。
+- 使用根路径部署。当前不支持将面板挂在 `/hermes` 等子路径下。
+
+**不要在运行 `next dev` 的同一目录执行 `npm run build`**，也不要启动多个共用 `.next` 的开发进程。发布构建应使用独立目录，或先停止开发服务。
+
+## 缓存与数据
+
+Web 自有数据默认保存在 `~/.hermes-web`，也可以通过 `HERMES_WEB_DATA_DIR` 指定位置：
+
+| 目录 / 位置 | 内容与生命周期 |
+| --- | --- |
+| `auth/` | 私有登录会话和一次性登录流程；重启后可继续读取，退出登录会撤销会话 |
+| `metadata-cache/` | 模型目录、自定义接口信息、配置结构和工具列表的服务端快照及模型发现结果 |
+| `artifacts/` | 可重建的产物索引；不取代 Hermes 原始会话与文件 |
+| `artifact-versions/` | 手动保存的产物历史版本，需要作为用户数据备份 |
+| 浏览器本地存储 | 语言、主题、显示偏好、草稿及待应用的会话模型选择 |
+
+元数据缓存按后端身份、配置档案和完整查询参数隔离。常规列表新鲜期为 1 分钟，配置结构为 5 分钟；过期快照最多保留 1 小时，访问时后台更新。并发读取合并为一次上游请求，成功保存相关配置后失效，手动刷新强制重新获取。
+
+密钥、原始配置值、YAML、认证状态、会话、定时任务和运行状态不使用这层元数据缓存。缓存目录不可用时，读取回退到上游接口。
+
+浏览器刷新或短时断网可以恢复当前标签页的运行，不会自动重发提示词。事件保留至运行结束后 30 分钟；Web 进程重启后的运行恢复以已保存历史为准，不承诺跨进程恢复内存中的事件缓冲。
+
+## 开发与测试
+
+技术栈为 Next.js、React 和 TypeScript，复用 Pi Web 的消息、文件、终端与设置组件。Hermes 专用请求经过本项目的认证适配层，再连接官方后端。
+
+```bash
+npm run test:hermes
+npx tsc --noEmit
 npm run lint
 ```
 
-Do not run `next build` or `npm run build` during normal development. It writes to `.next/` and can interfere with the development server; leave builds for release work.
+浏览器回归使用已经启动的开发服务。先确保测试进程与开发服务使用相同的本网站测试密码；若自定义 `HERMES_WEB_DATA_DIR`，两者也需指向相同目录。
 
-Contributor guides: [Internationalization](./docs/i18n.md) and [Release process](./docs/release.md).
-
-## Repository Layout
-
-```text
-app/             Next.js UI and API routes
-components/      React UI components
-hooks/           Client state and interaction hooks
-lib/             Session, agent, model, file, Git, and security logic
-public/          Static assets and PWA files
-bin/             npm CLI entrypoint and launch option parsing
-docs/            Focused user and contributor guides
-demo/            Static browser demo published to GitHub Pages (see demo/README.md)
+```bash
+# 在专用本地测试环境中运行；开发服务也应从相同测试配置启动。
+PI_WEB_PASSWORD=local-test-password npm run test:e2e -- model-persistence model-cards cron-layout
 ```
 
-See [AGENTS.md](./AGENTS.md) for the architecture notes and detailed file map.
+默认目标为 `http://127.0.0.1:30141`，测试入口见 [`e2e/run.mjs`](e2e/run.mjs)。可以用 `HERMES_TEST_URL` 修改目标，部分脚本通过 `HERMES_TEST_BROWSER` 选择浏览器；部分界面套件固定使用已安装的 Microsoft Edge。按实际脚本准备浏览器后再运行，不要将整套脚本直接当作无浏览器依赖的 CI 检查。
 
-## License
+带 `live` 的脚本用于真实后端联调。其中既有只读探测，也有在临时档案中执行写操作的脚本；运行前阅读脚本说明。模拟接口测试通过，不代表真实模型推理、渠道投递或服务器权限已经验收。
 
-[MIT](./LICENSE)
+| 路径 | 主要职责 |
+| --- | --- |
+| `app/` | Next.js 页面、服务端代理与 API 路由 |
+| `components/Hermes*.tsx` | Hermes 会话工作区、管理页面和设置界面 |
+| `hooks/` | 会话交互、附件、偏好及响应式状态 |
+| `lib/hermes-*` | Hermes 连接、传输适配、缓存、配置与产物逻辑 |
+| `lib/web-auth*`、`lib/web-request-auth.mjs` | 面板认证、会话与请求边界 |
+| `e2e/` | 浏览器回归与真实后端联调脚本 |
+| `deploy/` | 可自行替换参数的部署模板 |
+| `docs/` | 架构、接入、部署与贡献说明 |
 
-### 偏好设置与常用配置
+修改前请阅读 [`AGENTS.md`](AGENTS.md)、[`DESIGN.md`](DESIGN.md) 及对应的 [`docs/agents/`](docs/agents/) 模块说明。仓库仍保留部分 Pi Web 兼容代码与历史文档，Hermes 的使用和部署以本 README 与 `docs/hermes-*` 为准。
 
-偏好设置拆分为常规、主题、字体与缩放、聊天显示。主题卡片使用真实配色的页面骨架；界面、聊天和代码字号均使用 1 px 步进的滑块，立即应用并在浏览器中保存。聊天显示可调整推理内容的显示/默认折叠、工具预览详情、文字方向和用户气泡透明度。
+## 常见问题
 
-模型与工具、对话与任务、记忆与上下文、工作区与安全分别组织常用功能。任务执行和子任务使用按用途选择的字段，并提供审核过的中文标签/说明，不展示底层缓存及进程参数。高级表单优先展示已有中文说明的选项；完整原始配置仍可在 YAML 源码模式查看和编辑。网页显示偏好不会改写 Hermes 的模型行为配置；推理内容只展示模型实际提供的历史内容或 `reasoning.available` 事件。
+**为什么页面能登录，但不能聊天或读取管理信息？**
+
+网站登录、Dashboard 和 API Server 是三套独立连接。先在“账号与访问”分别检查状态；普通聊天需要 API Server，项目聊天需要 Dashboard WebSocket 和有效目录。
+
+**为什么 Dashboard 地址是本机，仍然跳转到 Nous 登录？**
+
+Dashboard 的有效 `public_url` 也会影响认证方式。保留现有公网 Dashboard 的认证，按[私有 Dashboard 接入指南](docs/hermes-private-dashboard.md)配置独立回环实例；不要通过关闭原服务认证来绕过它。
+
+**为什么刷新后模型选择、提供商列表或缓存看起来不同？**
+
+当前会话选择与全局默认模型分别保存；需要修改默认值时使用“设为默认”。模型管理只列出当前作用域中明确配置的提供商，其他可添加项在“添加提供商”中查看。外部修改 Hermes 配置后，可手动刷新目录以立即重取。
+
+**定时任务记录在哪里？时间按哪个时区显示？**
+
+在“定时任务”中选择任务即可查看运行记录，它们不会混入首页普通会话。当前管理页时间按 `Asia/Shanghai` 格式化，任务实际调度时区由 Hermes 配置决定。
+
+**能只部署静态页面，或直接使用上游 npm 包吗？**
+
+不能用静态托管替代本项目的 Next.js 服务端：认证、代理、文件、终端和持久状态都需要服务端运行。仓库的 npm 包名和部分元数据仍沿用上游，安装已发布的 `@agegr/pi-web` 不等于安装本 Hermes 适配版本；请按本仓库源码部署。
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request。问题描述请包含复现步骤、操作系统、Node.js 与 Hermes 版本，以及去除凭据后的错误信息。不要提交 `.env.local`、Cookie、模型密钥、Dashboard 令牌或私人会话截图。
+
+功能变更请保留真实接口语义，并提供相应验证；界面变更沿用现有共享组件与主题，附上演示数据下的桌面和窄屏截图。
+
+## 致谢与许可
+
+- [agegr/pi-web](https://github.com/agegr/pi-web)：本仓库的上游，提供消息渲染、文件与终端组件、设置结构和基础视觉体系。
+- [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)：智能体运行时、Dashboard、API Server 及相关协议与资产。
+- [nesquena/hermes-webui](https://github.com/nesquena/hermes-webui)：认证、配置发现和运行时适配设计的参考实现。
+
+代码沿用 [MIT License](LICENSE)，并保留上游版权声明。Hermes 头像的来源与许可见[资产说明](public/icons/HERMES-SOURCE.md)和[上游许可](public/icons/HERMES-LICENSE.txt)；字体许可见 [Noto Sans Mono OFL](public/fonts/OFL.txt)，Hermes 字段文案的许可见 [`lib/i18n/hermes/LICENSE`](lib/i18n/hermes/LICENSE)。使用相关名称和图标不代表本项目获得官方背书。
+
+## 免责声明
+
+本项目按“现状”（AS IS）提供，不对适用性、持续可用性、数据完整性或安全性作出保证。使用者应自行评估模型调用费用、主机权限、数据备份和对外部署风险。
+
+来源说明用于准确标注上游贡献，不代表将本仓库新增或修改代码的维护责任归于上游。具体许可、担保排除与责任限制以 [`LICENSE`](LICENSE) 原文为准。

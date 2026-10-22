@@ -1,0 +1,24 @@
+# Replace every @PLACEHOLDER@ before installing this unit.
+# Use absolute paths. Keep the environment file private.
+[Unit]
+Description=Hermes Web workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@WEB_USER@
+WorkingDirectory="@WEB_DIR@"
+EnvironmentFile="@ENV_FILE@"
+Environment=NODE_ENV=production
+Environment=HERMES_WEB_DATA_DIR=/var/lib/hermes-web
+StateDirectory=hermes-web
+StateDirectoryMode=0700
+ExecStart="@NODE_BIN@" "@WEB_DIR@/node_modules/next/dist/bin/next" start -H 127.0.0.1 -p 30141
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,14 +1,16 @@
 # Hermes Web UI —— 用 pi-web 的外观，接 Hermes 的后端
 
-目标：把 `chat.blueke.top` 现在的官方面板换成 pi-web 样式的界面，功能全部对接（状态、会话、聊天、Cron、Skills、日志、用量、Config、API Keys）。
+> 本文是早期适配计划，不代表当前实现或部署指南。当前说明见 [README.md](README.md) 与 [架构文档](docs/hermes-architecture.md)。域名与路径均为示例。
+
+目标：在 `hermes.example.com` 部署 pi-web 样式的独立 Hermes 界面，接入状态、会话、聊天、Cron、Skills、日志、用量、Config、API Keys。
 
 ## 结论先行（架构）
 
-- **前端**：fork `agegr/pi-web`（MIT）→ `/home/hermes/hermes-web`。它的 UI/组件/主题整套保留。
+- **前端**：fork `agegr/pi-web`（MIT）→ `/srv/hermes-web`。它的 UI/组件/主题整套保留。
 - **后端**：**不重写**。`hermes dashboard`（FastAPI，8648）继续当数据源；聊天走 `api_server` 平台（`/v1/runs` 流式）。
 - **只换数据层**：把 pi-web 的 `app/api/**` 里读 `~/.pi/agent/**` 的实现换成读 Hermes。
 - **文件 / Git / 终端** 这三块**不用改**：pi-web 本来就在本机读写文件系统 + node-pty，跑在这台服务器上天然可用，而且比官方面板还好用。
-- 部署：新服务（Next.js standalone）127.0.0.1:8700 → systemd → OpenResty `chat.blueke.top`（替换现在的 8648 反代）。
+- 部署：新服务（Next.js standalone）127.0.0.1:8700 → systemd → OpenResty `hermes.example.com`（替换现有面板的反代）。
 
 ## 数据层映射（pi-web 路由 → Hermes 来源）
 
@@ -44,7 +46,7 @@
 - **P1 只读**：会话列表 / 详情 / 搜索 → 接 dashboard API。
 - **P2 聊天**：`/v1/runs` + SSE 适配层，Markdown + 工具卡片渲染。
 - **P3 管理页**：状态、Cron、Skills、日志、用量、Config、API Keys。
-- **P4 上线**：Next standalone → systemd(8700) → OpenResty 替换 `chat.blueke.top`；保留旧 dashboard 作回滚。
+- **P4 上线**：Next standalone → systemd(8700) → OpenResty 切换 `hermes.example.com`；保留旧 dashboard 作回滚。
 
 ## 风险
 
